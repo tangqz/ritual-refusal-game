@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fafaf9;
+  --foreground: #1c1917;
 }
 
 @theme inline {
@@ -12,15 +12,34 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-slide-up { animation: slideUp 0.3s ease-out; }
+
+@keyframes cardFlip {
+  0% { transform: perspective(600px) rotateY(0deg); }
+  50% { transform: perspective(600px) rotateY(90deg); }
+  100% { transform: perspective(600px) rotateY(0deg); }
+}
+.animate-card-flip { animation: cardFlip 0.5s ease-in-out; }
+
+@keyframes floatUp {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-50px); opacity: 0; }
+}
+.animate-float-up { animation: floatUp 1.2s ease-out forwards; pointer-events: none; }
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-2px); }
+  20%, 40%, 60%, 80% { transform: translateX(2px); }
+}
+.animate-shake { animation: shake 0.4s ease-in-out; }
