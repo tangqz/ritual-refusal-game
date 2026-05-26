@@ -61,7 +61,9 @@ Tags use double brackets: <<TAG>> opens, <</TAG>> closes. Each on its own line.
 NPC dialogue and OPTIONS are separate sections — close <</NPC>> before <<OPTIONS>>.
 Only reference these wisdom card IDs: ${AUNTIE_WISDOMS.map(w => w.id).join(', ')}. Don't invent new ones.
 
-🚫 NEVER BREAK CHARACTER: The NPC must NEVER explain Chinese culture, compare China to other countries, mention "the ritual" or "the custom," or say things like "in China we do X" or "this is how Chinese people do it." The NPC simply IS Chinese — they act naturally without self-conscious commentary. Cultural insights belong in <<FEEDBACK>> and <<PSYCHOLOGY>>, NEVER in the NPC's spoken dialogue.`;
+🚫 NEVER BREAK CHARACTER: The NPC must NEVER explain Chinese culture, compare China to other countries, mention "the ritual" or "the custom," or say things like "in China we do X" or "this is how Chinese people do it." The NPC simply IS Chinese — they act naturally without self-conscious commentary. Cultural insights belong in <<FEEDBACK>> and <<PSYCHOLOGY>>, NEVER in the NPC's spoken dialogue.
+
+⚠️ CRITICAL RULE for Guided mode: Every response MUST include <<NPC>> dialogue. The NPC ALWAYS speaks — skipping <<NPC>> is never valid. If you output <<OPTIONS>>, you MUST have output <<NPC>> first.`;
 
 function buildFormatInstructions(stage: LearningStage, lang: Language, round: number, scenarioId: string): string {
   const goal = getScenarioGoal(scenarioId);
@@ -81,7 +83,11 @@ function buildFormatInstructions(stage: LearningStage, lang: Language, round: nu
   } else {
     instructions += `\n\nThis is round ${round} — no <<CONTEXT>> needed.`;
     if (stage === 'guided') {
-      instructions += `\n\n⚠️ CRITICAL for round ${round}: The player made a choice in the previous round. You MUST start with <<FEEDBACK>> — a brief, 1-sentence feedback on their last choice. Then output <<NPC>> — the NPC's natural continuation (NOT the same line as before!). Then <<OPTIONS>>. Do NOT repeat the NPC's opening line. Advance the conversation naturally.`;
+      instructions += `\n\n⚠️ CRITICAL for round ${round}: FIRST, check the player's last message. If it starts with "[ACCEPT]", the player has achieved the cultural goal — skip to the CONVERSATION ENDING rules below IMMEDIATELY. Do NOT offer more options, do NOT have the NPC insist or push further.
+
+If the player's last message does NOT contain "[ACCEPT]" (they chose a non-acceptance option): You MUST start with <<FEEDBACK>> — a brief, 1-sentence feedback on their last choice. Then output <<NPC>> — the NPC's natural continuation (NOT the same line as before!). Then <<OPTIONS>>. Do NOT repeat the NPC's opening line. Advance the conversation naturally.
+
+🔴 FORMAT CHECK: Every part of your response MUST be inside tags. Start with <<FEEDBACK>>, then <<NPC>>, then <<OPTIONS>>. Each on its own line. Close each before opening the next. NEVER output raw text.`;
     }
   }
 
@@ -113,9 +119,22 @@ CRITICAL RULES:
 
     instructions += `\n\nGuided mode. Each round: 1) The NPC speaks (<<NPC>>) — just their spoken dialogue with brief action notes. 2) Then offer four response options (<<OPTIONS>>) representing different cultural approaches, exactly one marked [ACCEPT]. Close <<NPC>> before opening <<OPTIONS>>.
 
-After the player chooses, the next round MUST include: 1) <<FEEDBACK>> — brief, 1-sentence feedback on their choice, 2) <<NPC>> — the NPC's next dialogue, 3) <<OPTIONS>> — new set of choices. NEVER put option bullets inside <<NPC>>. NEVER skip <<FEEDBACK>> when a player choice was made in the previous round.
+For regular rounds (player chose a non-[ACCEPT] option): You MUST include 1) <<FEEDBACK>> — brief, 1-sentence feedback, 2) <<NPC>> — the NPC's next dialogue, 3) <<OPTIONS>> — new set of choices. NEVER put option bullets inside <<NPC>>.
 
-CONVERSATION ENDING: The cultural goal is: ${goalDesc}. The conversation should last ${targetMin}-${targetMax} rounds. When the player chooses the [ACCEPT] option that achieves the goal, you MUST end. Instead of <<OPTIONS>>, output: 1) <<FEEDBACK>> — celebrating their achievement, 2) <<NPC>> — a BRIEF warm closing remark (1-2 sentences), 3) <<END>> on its own line. Do NOT add more dialogue after <<END>>. Do NOT offer more options after the goal is achieved.`;
+━━━━━━━━━━━━━━━━━━━━━━━━
+🛑 CONVERSATION ENDING — HIGHEST PRIORITY — OVERRIDES ALL OTHER RULES
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+The cultural goal is: ${goalDesc}. The conversation should last ${targetMin}-${targetMax} rounds.
+
+When the player's last message starts with "[ACCEPT]", they have achieved the goal. You MUST end the conversation NOW:
+1. <<FEEDBACK>> — 1 sentence celebrating their cultural achievement
+2. <<NPC>> — The NPC's WARM CLOSING. This is CRITICAL: the NPC must NOT insist, push, plead, or try to give anything anymore. The NPC simply expresses joy and warmth. Examples: "(beams with happiness) Hǎo! Auntie is so happy! Happy New Year, my dear!" — or — "(pats your hand warmly) Good child. This makes Auntie's heart full."
+3. <<END>> on its own line.
+
+❌ FORBIDDEN after acceptance:
+- Do NOT have the NPC say things like "come, take it", "gěi Auntie face", "here, here", push the hongbao again, plead further, or in any way continue the push-pull. The ritual dance is OVER. The NPC is now purely joyful and warm.
+- 🚫 CRITICAL: Do NOT repeat, list, or regurgitate the player's response options in the <<NPC>> section. The <<NPC>> section must contain ONLY the NPC's own spoken dialogue (1-2 sentences max). NEVER include multiple action+dialogue blocks. NEVER list the player's possible responses. If you see yourself writing multiple "(...)" action blocks inside <<NPC>>, STOP — you are regurgitating options. ONE action note and ONE short dialogue, then close the tag.`;
   }
   if (stage === 'practice') {
     const goalDesc = lang === 'en' ? (goal?.goalLabelEn || 'navigate the interaction gracefully') : (goal?.goalLabelZh || '优雅地驾驭互动');
@@ -223,10 +242,7 @@ export function buildSystemPrompt(
   }
 
   const parts = [
-    `=== OUTPUT FORMAT ===
-${formatBody}
-
-=== YOUR ROLE ===
+    `=== YOUR ROLE ===
 ${langPrompt}
 
 === SCENARIO CONTEXT ===
@@ -257,7 +273,15 @@ ${conceptsText}
 ${stateContext}
 
 === AVAILABLE WISDOM CARDS ===
-${(scenario.insightIds || []).join(', ')}`,
+${(scenario.insightIds || []).join(', ')}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔴 OUTPUT FORMAT — THIS IS HOW YOU MUST RESPOND 🔴
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${formatBody}
+
+🔴 REMEMBER: Every single response MUST use tags. Start with a tag. End with a close tag. NEVER output raw text without <<TAG>> wrappers.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
   ];
 
   return parts.join('\n\n');

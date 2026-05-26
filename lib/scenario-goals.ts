@@ -33,6 +33,11 @@ export interface ScenarioGoal {
   acceptanceFeedbackEn: string;
   acceptanceFeedbackZh: string;
 
+  /** Pre-written NPC warm closing when the player achieves the goal.
+   *  Used in Guided mode to avoid LLM hallucination/regurgitation on the final turn. */
+  npcClosingEn: string;
+  npcClosingZh: string;
+
   /** Context for the hint API — what the hint should guide toward */
   hintContextEn: string;
   hintContextZh: string;
@@ -57,6 +62,10 @@ export const SCENARIO_GOALS: Record<ScenarioId, ScenarioGoal> = {
       '🦉 You found the rhythm — gracious acceptance after 客气 (kèqi) is the heart of 人情世故 (rénqíng shìgù).',
     acceptanceFeedbackZh:
       '🦉 你找到了节奏——客气之后的优雅接受正是人情世故的精髓。',
+    npcClosingEn:
+      '(beams with joy, eyes crinkling, tucks the envelope into your hand) Hǎo, hǎo! Auntie\'s heart is so full. Xīnnián kuàilè, my dear child — come, let\'s eat dumplings before they get cold!',
+    npcClosingZh:
+      '（笑得合不拢嘴，眼睛眯成一条缝，把红包塞进你手里）好，好！阿姨这心里可高兴了。新年快乐，乖孩子——来，赶紧吃饺子，凉了就不好吃了！',
     hintContextEn:
       'The player is learning the 三推三让 (san tui san rang) ritual of giving/receiving hongbao. Guide them on when to refuse and when to accept.',
     hintContextZh:
@@ -79,6 +88,10 @@ export const SCENARIO_GOALS: Record<ScenarioId, ScenarioGoal> = {
       '🦉 Beautiful deflection! In Chinese culture, humble deflection (谦虚, qiānxū) shows more grace than a direct "thank you."',
     acceptanceFeedbackZh:
       '🦉 漂亮的谦虚回应！在中国文化中，谦虚的转移比直接说"谢谢"更显修养。',
+    npcClosingEn:
+      '(smiles warmly, pats your shoulder with affection) You really are such a good child — your mother raised you well. Now, let me pour you more tea, and you must tell me all about your life!',
+    npcClosingZh:
+      '（温暖地笑着，慈爱地拍拍你的肩）你真是个好孩子——你妈妈把你教得真好。来，阿姨再给你倒杯茶，你跟阿姨多说说你在外面的事！',
     hintContextEn:
       'The player is learning how to respond to compliments in Chinese culture. Guide them toward humble deflection (谦虚, qiānxū) rather than direct acceptance or excessive self-criticism.',
     hintContextZh:
@@ -101,6 +114,10 @@ export const SCENARIO_GOALS: Record<ScenarioId, ScenarioGoal> = {
       '🦉 Warm acceptance after polite hesitation is the guest\'s half of the hospitality dance. You made the host feel appreciated.',
     acceptanceFeedbackZh:
       '🦉 礼貌犹豫后的温暖接受是客人一方的待客之道。你让主人感到被珍惜。',
+    npcClosingEn:
+      '(settles back contentedly, tea cup warm in hand) Hǎo, this is good. Having you here — zhè cái shì jiā de wèidào, this is what home feels like. Don\'t be a stranger now, hǎo bù hǎo?',
+    npcClosingZh:
+      '（满足地靠进沙发，捧着热茶杯）好，这样才好。有你在——这才是家的味道。以后常来啊，好不好？',
     hintContextEn:
       'The player is learning guest etiquette in a Chinese home. Guide them on the rhythm of polite refusal followed by warm acceptance of hospitality.',
     hintContextZh:
@@ -123,6 +140,10 @@ export const SCENARIO_GOALS: Record<ScenarioId, ScenarioGoal> = {
       '🦉 Perfect! Accepting with gratitude while NOT opening the gift respects the giver\'s face — a key 礼物 (lǐwù) rule.',
     acceptanceFeedbackZh:
       '🦉 完美！带着感激收下却不打开，尊重了送礼者的面子——这是送礼礼仪的关键规则。',
+    npcClosingEn:
+      '(claps hands together, delighted) Hǎo! Xièxiè nǐ gěi Āyí miànzi — thank you for giving Auntie face! Now, no more 客气 between us. Come, let me show you the photos from my last trip — that\'s where I found your gift!',
+    npcClosingZh:
+      '（高兴地拍手）好！谢谢你给阿姨面子！咱们之间再也别客气了。来，阿姨给你看我上次旅行的照片——你的礼物就是那时挑的！',
     hintContextEn:
       'The player is learning Chinese gift etiquette. Guide them: refuse once or twice warmly, then accept graciously. Never open the gift in front of the giver.',
     hintContextZh:
@@ -145,6 +166,10 @@ export const SCENARIO_GOALS: Record<ScenarioId, ScenarioGoal> = {
       '🦉 Graceful concession with a firm commitment to reciprocate — this is how 面子 (miànzi) flows both ways in friendship.',
     acceptanceFeedbackZh:
       '🦉 优雅让步加上坚定的回请承诺——这就是友情中面子的双向流动。',
+    npcClosingEn:
+      '(laughs heartily, clinks your tea cup) Hǎo! Yīyán wéi dìng — it\'s settled then! Next meal is on you, and I\'ll order the most expensive dish! (winks) But today, you\'re my guest — and that\'s final.',
+    npcClosingZh:
+      '（开怀大笑，与你碰杯）好！一言为定！下次你请，我可要点最贵的！（眨眨眼）但今天，你是我的客人——就这么定了。',
     hintContextEn:
       'The player is learning the Chinese bill-battle ritual. Guide them: compete to pay, then concede gracefully with a firm promise to treat next time. Never suggest AA.',
     hintContextZh:
@@ -167,6 +192,10 @@ export const SCENARIO_GOALS: Record<ScenarioId, ScenarioGoal> = {
       '🦉 Warm acceptance with an offer to help — this transforms you from guest to family. The 留饭 (liú fàn) ritual is complete.',
     acceptanceFeedbackZh:
       '🦉 温暖接受加主动帮忙——这把你从客人变成了家人。留饭的仪式圆满了。',
+    npcClosingEn:
+      '(grins and hands you a pair of chopsticks) Zhè cái duì! That\'s more like it! Table setting is simple — the real art is in the eating. Xiǎo xīn, the fish has tiny bones — eat slowly, eat slowly!',
+    npcClosingZh:
+      '（咧嘴笑着递给你一双筷子）这才对嘛！摆桌子简单——吃才是真功夫。小心，鱼刺多——慢慢吃，慢慢吃！',
     hintContextEn:
       'The player is learning the Chinese dinner invitation ritual. Guide them: refuse once or twice, then accept warmly and offer to help set the table.',
     hintContextZh:
@@ -189,6 +218,10 @@ export const SCENARIO_GOALS: Record<ScenarioId, ScenarioGoal> = {
       '🦉 Accepting with the promise to pay it forward — this is 关系 (guānxi) at its healthiest: mentorship flowing across generations.',
     acceptanceFeedbackZh:
       '🦉 接受并承诺传承——这是关系最健康的形态：跨越代际的师徒之情。',
+    npcClosingEn:
+      '(nods slowly, eyes glistening with pride) Hǎo... I knew I chose right. Bùyào gūfù — don\'t let this go to waste. And when you\'re in my seat one day, remember: the best gift you can give a junior is belief. Lái, let\'s get back to work — we have much to do.',
+    npcClosingZh:
+      '（缓缓点头，眼中闪着骄傲的光芒）好……我没看错人。不要辜负。等你有一天坐在我这个位置，记住：给后辈最好的礼物就是信任。来，咱们继续干活——要做的事还多着呢。',
     hintContextEn:
       'The player is learning Chinese workplace gift dynamics. Guide them: refuse briefly, then accept with humility and frame it as a mentorship tradition to continue.',
     hintContextZh:
@@ -211,6 +244,10 @@ export const SCENARIO_GOALS: Record<ScenarioId, ScenarioGoal> = {
       '🦉 You said no without saying no — empathy + alternative help + relationship affirmation. This is 挽回拒绝 (wǎnhuí jùjué) at its finest.',
     acceptanceFeedbackZh:
       '🦉 你没有说不却表达了不——同理心 + 替代帮助 + 关系确认。这就是挽回拒绝的最高境界。',
+    npcClosingEn:
+      '(sighs, then smiles — a little sad but clearly touched) Hǎo ba... wǒ míngbái. At least you tried to help — that means more than money. Zánmen yǐhòu duō liánxì, hǎo bù hǎo? Don\'t be a stranger, cousin.',
+    npcClosingZh:
+      '（叹了口气，然后笑了——有点失落但明显被感动了）好吧……我明白。至少你试着帮我了——这比钱更重要。咱们以后多联系，好不好？别成了陌生人，表妹。',
     hintContextEn:
       'The player is learning how to refuse a request in Chinese culture. Guide them: never say no directly. Use empathy, cite external constraints, delay, and offer alternative help.',
     hintContextZh:

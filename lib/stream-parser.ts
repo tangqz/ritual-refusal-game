@@ -9,6 +9,9 @@ export interface ParsedSections {
   endAvailable: boolean;
   isEnd: boolean;
   title: ParsedTitle | null;
+  /** True if the LLM output contained at least one recognized <<TAG>> section.
+   *  False means the LLM output raw text without any tag wrappers. */
+  hasAnyTag: boolean;
 }
 
 export interface ParsedOption {
@@ -82,6 +85,7 @@ export class StreamParser {
       endAvailable: false,
       isEnd: false,
       title: null,
+      hasAnyTag: false,
     };
   }
 
@@ -124,6 +128,7 @@ export class StreamParser {
         this.flushSection();
         this.currentSection = type;
         this.buffer = [];
+        this.parsed.hasAnyTag = true;
         // <<END>> immediately signals conversation end (title content parsed on flush)
         if (type === 'END') {
           this.parsed.isEnd = true;
@@ -239,6 +244,28 @@ export class StreamParser {
           }
 
           this.parsed.npcText = npcLines.join('\n').trim();
+
+          // Detect regurgitated options leaked into NPC text (LLM failure mode):
+          // The text contains 3+ segments that look like option-style action+dialogue
+          // blocks — each starting with "(...)" and containing dialogue.
+          // Pattern: "(action) dialogue text..." repeated multiple times.
+          if (this.parsed.npcText) {
+            const actionBlockCount = (this.parsed.npcText.match(/\([^)]+\)\s*[A-ZĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙa-z]/g) || []).length;
+            // If 3+ action+dialogue blocks detected and no options were separately parsed,
+            // this is likely the LLM regurgitating option texts into NPC
+            if (actionBlockCount >= 3 && this.parsed.options.length === 0) {
+              // Try to extract just the first segment as the NPC response
+              // Split on action+dialogue boundaries: ) followed by capital letter or Chinese
+              const segments = this.parsed.npcText.split(/\)\s*(?=[A-ZĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙa-z\u4e00-\u9fff])/);
+              if (segments.length > 0) {
+                // First segment is likely the warm closing — rest is regurgitated options
+                const firstSegment = segments[0].trim();
+                if (firstSegment.length > 10) {
+                  this.parsed.npcText = firstSegment + (firstSegment.endsWith(')') ? '' : ')');
+                }
+              }
+            }
+          }
 
           // If we stripped psychology content and no psychology was set, use it
           if (psychLines.length > 0 && !this.parsed.psychologyText) {

@@ -127,6 +127,9 @@ function GameContent() {
   const stageRef = useRef<LearningStage | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const pendingWisdomRef = useRef<AuntieWisdom | null>(null);
+  // Track whether client already showed acceptance feedback for this round
+  // Prevents duplicate feedback when LLM also generates <<FEEDBACK>> after acceptance
+  const acceptanceFeedbackShownRef = useRef(false);
 
   const isObserve = stage === 'observe';
   const isGuided = stage === 'guided';
@@ -202,6 +205,11 @@ function GameContent() {
       const startPrompt = lang === 'en' ? scenario?.startPromptEn : scenario?.startPromptZh;
       let msgsToSend: Array<{ role: string; content: string }>;
       if (history.length === 0) {
+        // This should only happen on round 1 (game start).
+        // If it happens on later rounds, something is wrong with message passing.
+        if (nextRound > 1) {
+          console.error(`[streamFetch] BUG: history is empty but round=${nextRound}! messagesRef may be stale.`);
+        }
         msgsToSend = [{ role: 'user', content: startPrompt }];
       } else if (currentStage === 'observe') {
         // Send both assistant and user messages so the LLM sees the full conversation context
@@ -303,6 +311,14 @@ function GameContent() {
       const result = parser.getResult();
       setIsStreaming(false);
 
+      // Detect tag-less LLM output: LLM forgot format, output raw text without <<TAG>> wrappers.
+      // In guided mode this means no options → player gets stuck. Retry once.
+      if (!result.hasAnyTag && currentStage === 'guided' && attempt === 0 && result.npcText) {
+        console.warn('[streamFetch] LLM output has no tags (raw text). Retrying once...');
+        await new Promise(r => setTimeout(r, 500));
+        return streamFetch(history, currentStage, nextRound, 1);
+      }
+
       processResult(result, currentStage, nextRound, history);
     } catch (e) {
       clearTimeout(timeoutId);
@@ -365,7 +381,8 @@ function GameContent() {
 
     // Show cultural feedback in ALL non-observe modes (guided, practice, challenge)
     // Clean NPC dialogue contamination from feedback (LLM sometimes leaks NPC lines into <<FEEDBACK>>)
-    if (currentStage !== 'observe' && result.feedbackText) {
+    // Skip LLM feedback if client already showed acceptance feedback for this round
+    if (currentStage !== 'observe' && result.feedbackText && !acceptanceFeedbackShownRef.current) {
       const cleanedFeedback = cleanFeedbackText(result.feedbackText);
       if (cleanedFeedback) {
         setMessages(p => {
@@ -374,14 +391,19 @@ function GameContent() {
         });
       }
     }
+    // Reset acceptance feedback flag after processing
+    acceptanceFeedbackShownRef.current = false;
 
-    // Add NPC message with optional wisdom card
-    const npcMsg: Message = {
-      id: genId(), role: 'assistant', content: result.npcText,
-      psychologyNote: result.psychologyText || undefined,
-      wisdomCard,
-    };
-    setMessages(p => { const updated = [...p, npcMsg]; messagesRef.current = updated; return updated; });
+    // Add NPC message with optional wisdom card — skip if NPC text is empty
+    // (LLM may occasionally fail to generate <<NPC>>, which would create a broken empty bubble)
+    if (result.npcText && result.npcText.trim()) {
+      const npcMsg: Message = {
+        id: genId(), role: 'assistant', content: result.npcText,
+        psychologyNote: result.psychologyText || undefined,
+        wisdomCard,
+      };
+      setMessages(p => { const updated = [...p, npcMsg]; messagesRef.current = updated; return updated; });
+    }
     setCurrentRound(nextRound);
     currentRoundRef.current = nextRound;
 
@@ -404,6 +426,12 @@ function GameContent() {
 
     // Options — only in guided mode (prevent leaks in other modes)
     if (currentStage === 'guided' && result.options.length > 0) {
+      // If LLM generated OPTIONS but no NPC dialogue, warn but still show options.
+      // The explicit message-building fix in handleOptionClick should prevent this,
+      // but this guard keeps the game playable if it does happen.
+      if (!result.npcText || !result.npcText.trim()) {
+        console.warn('[processResult] Guided mode: LLM generated OPTIONS without NPC dialogue.');
+      }
       setOptions(result.options.map(o => ({ text: o.text, isAcceptance: o.isAcceptance })));
     }
 
@@ -413,9 +441,11 @@ function GameContent() {
       return;
     }
 
-    // Handle isEnd in guided mode
+    // Handle isEnd in guided mode: show "End Conversation" button instead of auto-ending.
+    // This lets the player read the NPC's warm closing and end at their own pace,
+    // similar to how practice/challenge mode handles conversation end.
     if (result.isEnd && currentStage === 'guided') {
-      setTimeout(() => endGame('natural_end'), 500);
+      setConversationEndAvailable(true);
       return;
     }
 
@@ -447,19 +477,35 @@ function GameContent() {
   const handleOptionClick = async (option: GameOption) => {
     if (endingRef.current || isLoading) return;
     const userMsg: Message = { id: genId(), role: 'user', content: option.text };
-    setMessages(p => { const updated = [...p, userMsg]; messagesRef.current = updated; return updated; });
+
+    // Build the updated message list explicitly BEFORE calling streamFetch.
+    // This avoids any React batching timing issues where messagesRef.current
+    // inside a setState callback might not be read correctly by the async call.
+    const updatedMessages = [...messagesRef.current, userMsg];
+    messagesRef.current = updatedMessages;
+    setMessages(updatedMessages);
     setOptions([]);
-    // Acceptance option → show scenario-specific feedback then continue to NPC's closing
+
+    // Acceptance option → show scenario-specific feedback, then let LLM generate warm closing
     if (option.isAcceptance) {
+      acceptanceFeedbackShownRef.current = true;
       const goal = getScenarioGoal(scenarioId);
       const ackFeedback = lang === 'en'
         ? (goal?.acceptanceFeedbackEn || '🦉 You found the rhythm — graceful navigation of Chinese social culture.')
         : (goal?.acceptanceFeedbackZh || '🦉 你找到了节奏——优雅地驾驭了中国社交文化。');
-      setMessages(p => {
-        const updated = [...p, { id: genId(), role: 'feedback' as const, content: ackFeedback }];
-        messagesRef.current = updated; return updated;
-      });
-      // Continue to next round so NPC can give warm closing — then LLM ends with <<END>>
+
+      // Add acceptance feedback immediately so the player sees it right away
+      const withFeedback = [
+        ...updatedMessages,
+        { id: genId(), role: 'feedback' as const, content: ackFeedback },
+      ];
+      messagesRef.current = withFeedback;
+      setMessages(withFeedback);
+      setCurrentRound(currentRoundRef.current + 1);
+      currentRoundRef.current = currentRoundRef.current + 1;
+
+      // Call LLM to generate NPC's warm closing + END tag
+      // LLM will see the [ACCEPT] choice and follow CONVERSATION ENDING rules
       const round = currentRoundRef.current;
       if (round >= SAFETY_MAX_ROUNDS) { setTimeout(() => endGame('accepted'), 1200); return; }
       await streamFetch(messagesRef.current, stageRef.current!, round + 1);
@@ -473,7 +519,9 @@ function GameContent() {
   const handlePracticeSubmit = async (text: string) => {
     if (endingRef.current || isLoading || !text.trim()) return;
     const userMsg: Message = { id: genId(), role: 'user', content: text.trim() };
-    setMessages(p => { const updated = [...p, userMsg]; messagesRef.current = updated; return updated; });
+    const updatedMessages = [...messagesRef.current, userMsg];
+    messagesRef.current = updatedMessages;
+    setMessages(updatedMessages);
     const round = currentRoundRef.current;
     if (round >= SAFETY_MAX_ROUNDS) { setTimeout(() => endGame('max_rounds'), 1000); return; }
     await streamFetch(messagesRef.current, stageRef.current!, round + 1);
