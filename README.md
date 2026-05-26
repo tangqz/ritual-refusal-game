@@ -2,6 +2,8 @@
 
 An interactive cultural education game for Chinese adoptees reconnecting with their heritage. Practice Chinese social etiquette through AI-powered roleplay conversations with virtual Chinese aunties and uncles.
 
+> ⚠️ **Notice**: This project is still under active development. Currently, only the red envelope (红包) scenario is relatively stable. You can try the latest online demo at [ritual-refusal-game.vercel.app](https://ritual-refusal-game.vercel.app) (VPN required for users in mainland China).
+
 ## How It Works
 
 Navigate through **8 real-life social scenarios** — receiving a red envelope, responding to compliments, fighting over the bill, navigating workplace guanxi, and more. Each scenario is a conversation with an AI-powered NPC who behaves like a natural Chinese relative, not a lecturer.
