@@ -207,20 +207,33 @@ export async function POST(request: NextRequest) {
           rawText,
         });
 
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`)
-        );
+        // Guard against closed controller (client disconnected)
+        try {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`)
+          );
+        } catch {
+          // Client disconnected — stream already closed, nothing to do
+        }
       } catch (e) {
         console.error('Stream error:', e);
         logChatError(requestId, {
           latencyMs: Date.now() - startTime,
           error: 'Stream interrupted',
         });
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: 'error', error: 'Stream interrupted' })}\n\n`)
-        );
+        try {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: 'error', error: 'Stream interrupted' })}\n\n`)
+          );
+        } catch {
+          // Client already disconnected
+        }
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // Already closed
+        }
       }
     },
   });

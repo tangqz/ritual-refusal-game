@@ -155,12 +155,15 @@ function GameContent() {
   }, [scenarioId]);
 
   // Warn before leaving mid-game + cleanup abort on unmount
+  const beforeUnloadHandlerRef = useRef<((e: BeforeUnloadEvent) => void) | null>(null);
   useEffect(() => {
     if (!stage || gameOver) return;
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    beforeUnloadHandlerRef.current = handler;
     window.addEventListener('beforeunload', handler);
     return () => {
       window.removeEventListener('beforeunload', handler);
+      beforeUnloadHandlerRef.current = null;
       abortRef.current?.abort();
     };
   }, [stage, gameOver]);
@@ -417,13 +420,9 @@ function GameContent() {
     }
 
     // Safety net: guided mode with NPC text but no options → LLM forgot <<OPTIONS>> or <<END>>
-    // Auto-end gracefully so the player isn't stuck with only "End Conversation Early"
+    // Show a prominent "End Conversation" button so the player isn't stuck, but let them decide when to end
     if (currentStage === 'guided' && result.options.length === 0 && result.npcText) {
       setConversationEndAvailable(true);
-      // Auto-fire endGame after a brief delay so the player sees the NPC's last message
-      setTimeout(() => {
-        if (!endingRef.current) endGame('natural_end');
-      }, 2500);
       return;
     }
 
@@ -450,7 +449,7 @@ function GameContent() {
     const userMsg: Message = { id: genId(), role: 'user', content: option.text };
     setMessages(p => { const updated = [...p, userMsg]; messagesRef.current = updated; return updated; });
     setOptions([]);
-    // Acceptance option → show scenario-specific feedback then end
+    // Acceptance option → show scenario-specific feedback then continue to NPC's closing
     if (option.isAcceptance) {
       const goal = getScenarioGoal(scenarioId);
       const ackFeedback = lang === 'en'
@@ -460,7 +459,10 @@ function GameContent() {
         const updated = [...p, { id: genId(), role: 'feedback' as const, content: ackFeedback }];
         messagesRef.current = updated; return updated;
       });
-      setTimeout(() => endGame('accepted'), 1200);
+      // Continue to next round so NPC can give warm closing — then LLM ends with <<END>>
+      const round = currentRoundRef.current;
+      if (round >= SAFETY_MAX_ROUNDS) { setTimeout(() => endGame('accepted'), 1200); return; }
+      await streamFetch(messagesRef.current, stageRef.current!, round + 1);
       return;
     }
     const round = currentRoundRef.current;
@@ -519,6 +521,11 @@ function GameContent() {
   const endGame = async (reason: string) => {
     if (endingRef.current) return;
     endingRef.current = true; setOptions([]); setPracticeEndAvailable(false);
+    // Immediately remove beforeunload handler so navigation after game-over is smooth
+    if (beforeUnloadHandlerRef.current) {
+      window.removeEventListener('beforeunload', beforeUnloadHandlerRef.current);
+      beforeUnloadHandlerRef.current = null;
+    }
     const st = stageRef.current;
 
     // Persist progress IMMEDIATELY — before async debrief — so interruption doesn't lose progress

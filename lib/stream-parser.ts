@@ -45,12 +45,6 @@ const OPEN_TAGS: [SectionType, RegExp][] = [
 ];
 
 // Close tags: accept both <</TAG>> (correct) and </TAG> (XML-style, common LLM mistake)
-function makeCloseRegex(tag: string): RegExp {
-  return /^<<\/TAG>>$/.source
-    ? new RegExp(`^(<<\\/${tag}>>|<\\/${tag}>)$`)
-    : new RegExp(`^(<<\\/${tag}>>|<\\/${tag}>)$`);
-}
-
 const CLOSE_PATTERNS: Record<string, RegExp> = {
   NPC: /^(<<\/NPC>>|<\/NPC>)$/,
   PLAYER: /^(<<\/PLAYER>>|<\/PLAYER>)$/,

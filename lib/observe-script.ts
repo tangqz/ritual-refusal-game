@@ -848,23 +848,36 @@ export function getObserveScript(scenarioId: string, lang: 'en' | 'zh'): Observe
  * Returns an array of string chunks that can be revealed with delays.
  */
 export function chunkForStreaming(text: string): string[] {
-  // Split by sentence boundaries (。, !, ?, ！, ？, …, newlines)
-  // Also split long parenthetical actions
-  const sentences = text.split(/(?<=[.!?。！？…\n])\s*/);
+  // Build chunks by scanning character-by-character, preserving all whitespace.
+  // Split at sentence-ending punctuation (including following whitespace in the chunk),
+  // and at comma-like breaks when a chunk grows too long.
   const chunks: string[] = [];
+  let current = '';
 
-  for (const s of sentences) {
-    if (!s.trim()) continue;
-    // Break long sentences (>80 chars) into smaller pieces at natural breaks
-    if (s.length > 80) {
-      const subChunks = s.split(/(?<=[,;，；：:—\-–]\s*)/);
-      for (const sc of subChunks) {
-        if (sc.trim()) chunks.push(sc);
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    current += char;
+
+    const isSentenceEnd = /[.!?。！？…\n]/.test(char);
+    const isCommaBreak = /[,;，；：:—\-–]/.test(char);
+
+    if (isSentenceEnd) {
+      // Absorb trailing whitespace into this chunk
+      while (i + 1 < text.length && /\s/.test(text[i + 1])) {
+        current += text[++i];
       }
-    } else {
-      chunks.push(s);
+      chunks.push(current);
+      current = '';
+    } else if (isCommaBreak && current.length > 80) {
+      // Break long segments at natural pause points
+      chunks.push(current);
+      current = '';
     }
   }
 
-  return chunks;
+  if (current.trim()) {
+    chunks.push(current);
+  }
+
+  return chunks.length > 0 ? chunks : [text];
 }

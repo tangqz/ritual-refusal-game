@@ -106,7 +106,16 @@ CRITICAL RULES:
 6. Continue naturally from where the last exchange left off — do NOT restart from the beginning.`;
   }
   if (stage === 'guided') {
-    instructions += '\n\nGuided mode. Each round: 1) The NPC speaks (<<NPC>>) — just their spoken dialogue with brief action notes. 2) Then offer four response options (<<OPTIONS>>) representing different cultural approaches, exactly one marked [ACCEPT]. Close <<NPC>> before opening <<OPTIONS>>. After the player chooses, the next round MUST include: 1) <<FEEDBACK>> — brief, 1-sentence feedback on their choice, 2) <<NPC>> — the NPC\'s next dialogue, 3) <<OPTIONS>> — new set of choices. NEVER put option bullets inside <<NPC>>. NEVER skip <<FEEDBACK>> when a player choice was made in the previous round.';
+    const goalDesc = lang === 'en' ? (goal?.goalLabelEn || 'the culturally-correct move') : (goal?.goalLabelZh || '文化上得体的举动');
+    const goalPattern = goal?.pattern || 'refuse_then_accept';
+    const targetMin = goal?.targetRoundRange?.min ?? 2;
+    const targetMax = goal?.targetRoundRange?.max ?? 3;
+
+    instructions += `\n\nGuided mode. Each round: 1) The NPC speaks (<<NPC>>) — just their spoken dialogue with brief action notes. 2) Then offer four response options (<<OPTIONS>>) representing different cultural approaches, exactly one marked [ACCEPT]. Close <<NPC>> before opening <<OPTIONS>>.
+
+After the player chooses, the next round MUST include: 1) <<FEEDBACK>> — brief, 1-sentence feedback on their choice, 2) <<NPC>> — the NPC's next dialogue, 3) <<OPTIONS>> — new set of choices. NEVER put option bullets inside <<NPC>>. NEVER skip <<FEEDBACK>> when a player choice was made in the previous round.
+
+CONVERSATION ENDING: The cultural goal is: ${goalDesc}. The conversation should last ${targetMin}-${targetMax} rounds. When the player chooses the [ACCEPT] option that achieves the goal, you MUST end. Instead of <<OPTIONS>>, output: 1) <<FEEDBACK>> — celebrating their achievement, 2) <<NPC>> — a BRIEF warm closing remark (1-2 sentences), 3) <<END>> on its own line. Do NOT add more dialogue after <<END>>. Do NOT offer more options after the goal is achieved.`;
   }
   if (stage === 'practice') {
     const goalDesc = lang === 'en' ? (goal?.goalLabelEn || 'navigate the interaction gracefully') : (goal?.goalLabelZh || '优雅地驾驭互动');
