@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { logHintRequest, logHintResponse, logHintError, rid } from '@/lib/llm-logger';
+import { getScenarioGoal } from '@/lib/scenario-goals';
 
 export async function POST(request: NextRequest) {
   const requestId = rid();
@@ -21,6 +22,7 @@ export async function POST(request: NextRequest) {
 
   const { messages, scenario, lang } = body;
   const language = (lang as string) || 'en';
+  const goal = getScenarioGoal(scenario as string);
 
   const userMessages = (messages as Array<{ role: string; content: string }>) || [];
   const lastFew = userMessages.slice(-4).map(m => `${m.role}: ${m.content}`).join('\n');
@@ -31,9 +33,30 @@ export async function POST(request: NextRequest) {
     messageCount: userMessages.length,
   });
 
+  const hintContextEn = goal?.hintContextEn || 'The player is learning Chinese social etiquette. Guide them toward the culturally appropriate response.';
+  const hintContextZh = goal?.hintContextZh || '玩家正在学习中国社交礼仪。引导他们走向文化上得体的回应。';
+  const targetMin = goal?.targetRoundRange?.min ?? 2;
+  const targetMax = goal?.targetRoundRange?.max ?? 3;
+
   const systemPrompt = language === 'en'
-    ? `You are a friendly Chinese cultural coach. Based on the conversation so far, give ONE short, practical hint about what would be culturally graceful to say or do next. Focus on the Chinese social norm at play. Keep it to 1-2 sentences. Be warm and encouraging. Never sound judgmental. Reply with just the hint text — no tags, no formatting.`
-    : `你是一位友好的中国文化教练。根据目前的对话，给出一个简短实用的提示：下一步说什么或做什么在文化上最得体。聚焦当前的中国社交规范。1-2句话。温暖鼓励，不说教。只回复提示文本——不要标签、不要格式。`;
+    ? `You are a Chinese cultural coach. ${hintContextEn}
+
+Based on the conversation so far, count how many rounds of polite refusal/deflection the player has done. The culturally-correct moment to make the goal move is around round ${targetMin}-${targetMax}.
+
+- If the player has done fewer than ${targetMin} polite refusals/deflections: suggest a warm deflection phrase appropriate to the situation.
+- If the player has done ${targetMin}-${targetMax}: tell them NOW is the right moment — describe what the culturally-correct action looks like.
+- If the goal has already been achieved: praise them warmly.
+
+Give ONE short, specific sentence (max 20 words). Be direct and practical — no fluff. Reply with just the hint text.`
+    : `你是一位中国文化教练。${hintContextZh}
+
+根据目前的对话，数一数玩家已经进行了几轮礼貌推辞/转移。文化上正确的目标动作时机大约在第${targetMin}-${targetMax}轮。
+
+- 玩家礼貌推辞/转移少于${targetMin}次：建议一句适合当前情境的温暖客气话。
+- 玩家已进行${targetMin}-${targetMax}轮：告诉他们现在正是时候——描述文化上正确的做法是什么。
+- 目标已经达成：热情地表扬他们。
+
+给一句简短、具体的提示（最多30字）。直接、实用——不要废话。只回复提示文本。`;
 
   const finalMessages = [
     { role: 'system', content: systemPrompt },

@@ -4,6 +4,7 @@ import { STAGES } from '../learning-progression';
 import { SCENARIO_PROMPTS, type ScenarioPromptData } from './scenario-prompts';
 import type { Language } from '../i18n';
 import { AUNTIE_WISDOMS } from '../cultural-insights';
+import { getScenarioGoal } from '../scenario-goals';
 
 function getScenario(scenarioId: string): ScenarioConfig | undefined {
   return SCENARIOS[scenarioId as ScenarioId];
@@ -44,41 +45,128 @@ id: card_id
 <</WISDOM>>
 
 <<OPTIONS>>
-(Guided and challenge modes) Four ways the player might respond. Exactly ONE must represent accepting the offer — mark it with [ACCEPT] at the start of the line. The other three are different refusal/deflection strategies.
-- [ACCEPT] (bow, accept with both hands) Thank you, Auntie! Wishing you health!
-- (wave hands) No no, I really can't...
-- (step back) Auntie, you're too kind, but...
-- (hesitate) Oh, I don't know...
+(Guided mode) Four ways the player might respond.
+{{OPTIONS_INSTRUCTION}}
+- {{OPTION_EXAMPLE}}
+- (another response strategy)
+- (a different response strategy)
+- (yet another response strategy)
 <</OPTIONS>>
 
 <<FEEDBACK>>
-(Guided mode, after the player picks an option) Warm, 2-3 sentence reflection on their choice — what cultural instinct it shows, and how it fits Chinese social norms. Lead with what they did well. Don't call anything "wrong."
+(Guided mode, after the player picks an option) Brief, 1-sentence feedback on their choice — what cultural instinct it shows. Lead with what they did well.
 <</FEEDBACK>>
 
 Tags use double brackets: <<TAG>> opens, <</TAG>> closes. Each on its own line.
 NPC dialogue and OPTIONS are separate sections — close <</NPC>> before <<OPTIONS>>.
-Only reference these wisdom card IDs: ${AUNTIE_WISDOMS.map(w => w.id).join(', ')}. Don't invent new ones.`;
+Only reference these wisdom card IDs: ${AUNTIE_WISDOMS.map(w => w.id).join(', ')}. Don't invent new ones.
 
-function buildFormatInstructions(stage: LearningStage, lang: Language, round: number): string {
-  let instructions = STREAMING_FORMAT;
+🚫 NEVER BREAK CHARACTER: The NPC must NEVER explain Chinese culture, compare China to other countries, mention "the ritual" or "the custom," or say things like "in China we do X" or "this is how Chinese people do it." The NPC simply IS Chinese — they act naturally without self-conscious commentary. Cultural insights belong in <<FEEDBACK>> and <<PSYCHOLOGY>>, NEVER in the NPC's spoken dialogue.`;
+
+function buildFormatInstructions(stage: LearningStage, lang: Language, round: number, scenarioId: string): string {
+  const goal = getScenarioGoal(scenarioId);
+  const optsInstruction = lang === 'en' ? goal?.optionsInstructionEn : goal?.optionsInstructionZh;
+  const optsExample = lang === 'en' ? goal?.optionExampleEn : goal?.optionExampleZh;
+
+  // Fill in the template placeholders
+  let instructions = STREAMING_FORMAT
+    .replace('{{OPTIONS_INSTRUCTION}}', optsInstruction || 'Exactly ONE must represent the culturally-correct response — mark it with [ACCEPT].')
+    .replace('{{OPTION_EXAMPLE}}', optsExample || '[ACCEPT] The culturally appropriate response.');
 
   if (round === 1) {
     instructions += '\n\nThis is round 1 — include <<CONTEXT>> to set the scene.';
+    if (stage === 'guided') {
+      instructions += ' In guided mode round 1: start with <<CONTEXT>>, then <<NPC>>, then <<OPTIONS>>. No <<FEEDBACK>> needed yet.';
+    }
   } else {
     instructions += `\n\nThis is round ${round} — no <<CONTEXT>> needed.`;
+    if (stage === 'guided') {
+      instructions += `\n\n⚠️ CRITICAL for round ${round}: The player made a choice in the previous round. You MUST start with <<FEEDBACK>> — a brief, 1-sentence feedback on their last choice. Then output <<NPC>> — the NPC's natural continuation (NOT the same line as before!). Then <<OPTIONS>>. Do NOT repeat the NPC's opening line. Advance the conversation naturally.`;
+    }
   }
 
   if (stage === 'observe') {
-    instructions += '\n\nObserve mode. You play both sides: <<NPC>>, <<PLAYER>>, and <<PSYCHOLOGY>> each round. Include <<WISDOM>> when relevant. Let the exchange reach its natural conclusion — the player controls when to move on.';
+    const targetMin = goal?.targetRoundRange?.min ?? 2;
+    const targetMax = goal?.targetRoundRange?.max ?? 3;
+    const goalDesc = lang === 'en' ? (goal?.goalLabelEn || 'make the culturally-correct move') : (goal?.goalLabelZh || '做出文化上得体的举动');
+
+    instructions += `\n\nObserve mode — you are simulating a Chinese cultural interaction. The conversation follows a natural rhythm of polite back-and-forth. The cultural goal is: ${goalDesc}.
+
+CONVERSATION ARC (this is round ${round}):
+- Rounds 1-${targetMin - 1} (polite deflection phase): NPC initiates → Player responds with culturally-appropriate hesitation/deflection → Psychology analysis. The deflection should feel warm, not cold.
+- Round ${targetMin}-${targetMax} (goal phase): NPC escalates with genuine emotion → Player makes the culturally-correct move with warmth and authenticity → Psychology analysis explaining why THIS moment is the right one.
+- After the goal is achieved: NPC gives a BRIEF warm closing remark (1-2 sentences) → then output <<END>> to end the conversation.
+
+CRITICAL RULES:
+1. The conversation MUST converge naturally to the goal. Continuing to deflect past round ${targetMax} violates cultural norms.
+2. After the goal is achieved, the NEXT call MUST include <<END>>. Do not add more dialogue after <<END>>.
+3. Each round output exactly THREE sections in order: <<NPC>> → <<PLAYER>> → <<PSYCHOLOGY>>. Close each section before opening the next.
+4. Include <<WISDOM>> when a cultural concept surfaces naturally.
+5. Keep ALL psychology analysis strictly INSIDE <<PSYCHOLOGY>> tags.
+6. Continue naturally from where the last exchange left off — do NOT restart from the beginning.`;
   }
   if (stage === 'guided') {
-    instructions += '\n\nGuided mode. Each round: the NPC speaks (<<NPC>>), then you offer four response options (<<OPTIONS>>) representing different cultural approaches. After the player chooses, next round: reflect on their choice (<<FEEDBACK>>) then continue the conversation naturally.';
+    instructions += '\n\nGuided mode. Each round: 1) The NPC speaks (<<NPC>>) — just their spoken dialogue with brief action notes. 2) Then offer four response options (<<OPTIONS>>) representing different cultural approaches, exactly one marked [ACCEPT]. Close <<NPC>> before opening <<OPTIONS>>. After the player chooses, the next round MUST include: 1) <<FEEDBACK>> — brief, 1-sentence feedback on their choice, 2) <<NPC>> — the NPC\'s next dialogue, 3) <<OPTIONS>> — new set of choices. NEVER put option bullets inside <<NPC>>. NEVER skip <<FEEDBACK>> when a player choice was made in the previous round.';
   }
   if (stage === 'practice') {
-    instructions += '\n\nPractice mode. NPC speaks (<<NPC>>), then the player types freely — no options needed. Respond naturally to whatever they say.';
+    const goalDesc = lang === 'en' ? (goal?.goalLabelEn || 'navigate the interaction gracefully') : (goal?.goalLabelZh || '优雅地驾驭互动');
+    const goalPattern = goal?.pattern || 'refuse_then_accept';
+    const acceptHints = goalPattern === 'refuse_indirectly'
+      ? `using indirect refusal language (vague responses, citing constraints, offering alternatives) — NOT direct acceptance`
+      : goalPattern === 'compete_then_concede'
+      ? `conceding gracefully with a firm commitment to reciprocate`
+      : goalPattern === 'deflect_and_connect'
+      ? `humbly deflecting while returning warmth — NOT directly accepting`
+      : `genuinely accepting with warmth (after appropriate hesitation)`;
+
+    instructions += `
+
+Practice mode. NPC speaks (<<NPC>>), then the player types freely — no options needed. Respond naturally to whatever they say.
+
+The cultural goal is: ${goalDesc}.
+
+EVERY ROUND (including the first response after NPC speaks):
+1. Always start with <<FEEDBACK>> — a brief, 1-sentence feedback. Note what the player did well in cultural terms, very concisely.
+2. Then <<NPC>> — the NPC's next natural conversational turn.
+
+This means cultural insight appears throughout the conversation, not just at the end. Each player response is a teachable moment.
+
+CONVERSATION ENDING — GOAL DETECTION:
+After the player sends a message, read it carefully. If the player achieves the cultural goal (${acceptHints}), you MUST:
+1. Output <<FEEDBACK>> — a brief, 1-sentence feedback celebrating their cultural fluency
+2. Output <<NPC>> — a BRIEF warm closing remark from the NPC (1-2 sentences)
+3. Output <<END>> on its own line. Do NOT add more dialogue after <<END>>.
+
+Key: the conversation SHOULD end when the goal is achieved. Don't drag it out.`;
   }
   if (stage === 'challenge') {
-    instructions += '\n\nChallenge mode. <<NPC>> only — no <<OPTIONS>>. The player types freely. No hints, no guidance. Save <<PSYCHOLOGY>> and <<WISDOM>> for the end of the conversation.';
+    const goalDesc = lang === 'en' ? (goal?.goalLabelEn || 'navigate the interaction gracefully') : (goal?.goalLabelZh || '优雅地驾驭互动');
+    const goalPattern = goal?.pattern || 'refuse_then_accept';
+    const acceptHints = goalPattern === 'refuse_indirectly'
+      ? `using indirect refusal language — NOT direct acceptance`
+      : goalPattern === 'compete_then_concede'
+      ? `conceding gracefully with a firm commitment to reciprocate`
+      : goalPattern === 'deflect_and_connect'
+      ? `humbly deflecting while returning warmth — NOT directly accepting`
+      : `genuinely accepting with warmth (after appropriate hesitation)`;
+
+    instructions += `
+
+Challenge mode. <<NPC>> only — no <<OPTIONS>>. The player types freely. No hints, no guidance.
+
+The cultural goal is: ${goalDesc}.
+
+⚠️ NO <<FEEDBACK>> DURING THE CONVERSATION. This is challenge mode — the player must navigate without any cultural coaching. Do NOT output <<FEEDBACK>> during regular back-and-forth rounds. Only output <<NPC>> in each round.
+
+Save <<PSYCHOLOGY>> and <<WISDOM>> for the very end.
+
+CONVERSATION ENDING — GOAL DETECTION:
+When the player achieves the cultural goal (${acceptHints}), you MUST:
+1. Output <<FEEDBACK>> — a brief, 1-sentence feedback on their performance (this is the ONLY time FEEDBACK appears in challenge mode)
+2. Output <<NPC>> — a BRIEF warm closing remark (1-2 sentences)
+3. Output <<END>> on its own line. Do NOT add more dialogue after <<END>>.
+
+Key: when the goal is achieved, END the conversation. Don't keep negotiating.`;
   }
 
   if (lang === 'en') {
@@ -115,7 +203,7 @@ export function buildSystemPrompt(
     .map((c) => `- ${c.term} (${c.pinyin}, ${c.characters}): ${lang === 'en' ? c.definitionEn : c.definitionZh}`)
     .join('\n');
 
-  const formatBody = buildFormatInstructions(stageId as LearningStage, lang, currentRound);
+  const formatBody = buildFormatInstructions(stageId as LearningStage, lang, currentRound, scenarioId);
 
   // State context
   let stateContext = `Round ${currentRound} — ${lang === 'en' ? scenario.titleEn : scenario.titleZh} — ${lang === 'en' ? scenario.settingEn : scenario.settingZh}`;

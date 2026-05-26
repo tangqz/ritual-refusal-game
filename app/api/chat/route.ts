@@ -74,13 +74,18 @@ export async function POST(request: NextRequest) {
   };
 
   // Guided mode: enable deep reasoning for nuanced option generation
+  // Use higher token budget to accommodate reasoning + multi-section output (FEEDBACK+NPC+OPTIONS)
   if (stage === 'guided') {
     dsBody.reasoning_effort = 'high';
+    dsBody.max_tokens = 8192;
   } else {
     dsBody.thinking = { type: 'disabled' };
   }
 
   if (sessionId) dsBody.user_id = `cultural-compass-${sessionId}`;
+
+  // Longer timeout for guided mode (deep reasoning takes time)
+  const fetchTimeout = stage === 'guided' ? 90000 : 30000;
 
   let dsResponse: Response;
   try {
@@ -88,6 +93,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify(dsBody),
+      signal: AbortSignal.timeout(fetchTimeout),
     });
   } catch {
     logChatError(requestId, { latencyMs: Date.now() - startTime, error: 'Failed to reach API' });

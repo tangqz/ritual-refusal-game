@@ -93,7 +93,7 @@ export class StreamParser {
 
   feed(line: string): {
     liveNpcText: string; livePlayerText: string;
-    livePsychologyText: string;
+    livePsychologyText: string; liveFeedbackText: string;
   } {
     const trimmed = line.trim();
 
@@ -103,6 +103,7 @@ export class StreamParser {
       liveNpcText: this.parsed.npcText,
       livePlayerText: this.parsed.playerText,
       livePsychologyText: this.parsed.psychologyText,
+      liveFeedbackText: this.parsed.feedbackText,
     };
 
     if (!trimmed) return empty;
@@ -163,6 +164,7 @@ export class StreamParser {
       liveNpcText: this.parsed.npcText,
       livePlayerText: this.parsed.playerText,
       livePsychologyText: this.parsed.psychologyText,
+      liveFeedbackText: this.parsed.feedbackText,
     };
   }
 
@@ -177,24 +179,80 @@ export class StreamParser {
           const lines = content.split('\n');
           const bulletLines: string[] = [];
           const npcLines: string[] = [];
+          const psychLines: string[] = [];
           let wisdomId: string | null = null;
+          let inPsychBlock = false;
+
+          // Markers that indicate leaked psychology / non-NPC content
+          const psychMarkers = [
+            "NPC's real thoughts:",
+            "Player's real thoughts:",
+            "Cultural subtext:",
+            "NPC's inner thoughts:",
+            "Player's inner thoughts:",
+            "NPC心理活动：",
+            "玩家心理活动：",
+            "文化潜台词：",
+            "NPC的真实想法：",
+            "玩家的真实想法：",
+          ];
+
           for (const line of lines) {
             const trimmed = line.trim();
+
             // Strip leaked wisdom card ID lines
             if (trimmed.startsWith('id:') && trimmed.length > 4 && !wisdomId) {
               wisdomId = trimmed.slice(3).trim();
               continue;
             }
-            // Strip leaked bullet-point options
+
+            // Detect start of leaked psychology block
+            const isPsychMarker = psychMarkers.some(m => trimmed.startsWith(m));
+            if (isPsychMarker) {
+              inPsychBlock = true;
+              psychLines.push(line);
+              continue;
+            }
+
+            // If we're in a psych block, check if the next line starts a new thought section
+            if (inPsychBlock) {
+              // Continue capturing psych content until we hit something that looks like normal dialogue
+              const isStillPsych = psychMarkers.some(m => trimmed.startsWith(m))
+                || trimmed.match(/^[A-Z][a-z]+'s (real|inner) thoughts/)
+                || trimmed.match(/^(NPC|Player)/);
+              if (isStillPsych || trimmed.length === 0 || trimmed.startsWith('(') === false) {
+                psychLines.push(line);
+                // If this line also starts another psych marker, keep going
+                if (!isStillPsych && trimmed.length > 0) {
+                  // Might be dialogue — check if it's clearly a psychology continuation
+                  inPsychBlock = false;
+                  npcLines.push(line);
+                }
+                continue;
+              }
+              inPsychBlock = false;
+            }
+
+            // Strip leaked bullet-point options (including [ACCEPT] prefixed)
             if (trimmed.startsWith('- ') && trimmed.length > 2) {
               bulletLines.push(trimmed.slice(2).trim());
+            } else if (trimmed.startsWith('-[') && trimmed.length > 3) {
+              // Handle "-[ACCEPT] ..." format
+              bulletLines.push(trimmed.slice(1).trim());
             } else {
               npcLines.push(line);
             }
           }
+
           this.parsed.npcText = npcLines.join('\n').trim();
-          // If we found leaked options (3+), use them
-          if (bulletLines.length >= 3) {
+
+          // If we stripped psychology content and no psychology was set, use it
+          if (psychLines.length > 0 && !this.parsed.psychologyText) {
+            this.parsed.psychologyText = psychLines.join('\n').trim();
+          }
+
+          // If we found leaked options (3+), use them only if no options were parsed yet
+          if (bulletLines.length >= 3 && this.parsed.options.length === 0) {
             this.parsed.options = bulletLines.map(text => {
               let isAcceptance = false;
               let cleanText = text;
@@ -269,11 +327,38 @@ export class StreamParser {
 
   getResult(): ParsedSections {
     this.flushSection();
-    // Fallback: if no NPC text, use accumulated raw text (strip tags)
+    // Fallback: if no NPC text, use accumulated raw text (strip tags and already-parsed content)
     if (!this.parsed.npcText && this.rawText.length > 0) {
+      // Collect content that was already parsed into other sections
+      const alreadyParsed = new Set<string>();
+      if (this.parsed.contextText) {
+        this.parsed.contextText.split('\n').forEach(l => alreadyParsed.add(l.trim()));
+      }
+      if (this.parsed.playerText) {
+        this.parsed.playerText.split('\n').forEach(l => alreadyParsed.add(l.trim()));
+      }
+      if (this.parsed.psychologyText) {
+        this.parsed.psychologyText.split('\n').forEach(l => alreadyParsed.add(l.trim()));
+      }
+      if (this.parsed.feedbackText) {
+        this.parsed.feedbackText.split('\n').forEach(l => alreadyParsed.add(l.trim()));
+      }
+
       const cleaned = this.rawText
         .map(l => l.trim())
-        .filter(l => l && !l.startsWith('<<') && !l.endsWith('>>') && !l.startsWith('</') && !l.endsWith('>'))
+        .filter(l => {
+          if (!l) return false;
+          if (l.startsWith('<<') || l.endsWith('>>') || l.startsWith('</') || l.endsWith('>')) return false;
+          if (l.startsWith('- ') || l.startsWith('-[')) return false; // option bullets
+          if (l.startsWith('id:') && l.length < 60) return false; // wisdom IDs
+          // Skip lines that look like psychology markers
+          if (/^(NPC|Player)'s (real|inner) thoughts/i.test(l)) return false;
+          if (/^(NPC|玩家)心理活动/.test(l)) return false;
+          if (l.startsWith('Cultural subtext:') || l.startsWith('文化潜台词：')) return false;
+          // Skip lines already parsed into other sections
+          if (alreadyParsed.has(l)) return false;
+          return true;
+        })
         .join('\n');
       if (cleaned) this.parsed.npcText = cleaned;
     }

@@ -1,8 +1,9 @@
 'use client';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ScenarioId, ScenarioConfig, DifficultyTier } from '@/lib/scenario-config';
 import { getUnlockedScenarios, getScenariosByTier } from '@/lib/scenario-config';
-import { loadProgress } from '@/lib/game-progress-store';
+import { loadProgress, type GameProgress } from '@/lib/game-progress-store';
 import { getInsightsByScenario } from '@/lib/cultural-insights';
 import type { Language } from '@/lib/i18n';
 import { t } from '@/lib/i18n';
@@ -26,7 +27,10 @@ function ScenarioCard({
   lang: Language;
   onClick: () => void;
 }) {
-  const progress = loadProgress();
+  const [mounted, setMounted] = useState(false);
+  const [progress, setProgress] = useState<GameProgress>(() => loadProgress());
+  useEffect(() => { setProgress(loadProgress()); setMounted(true); }, []);
+
   const sp = progress.scenarioProgress[scenario.id];
   const completedStages = sp?.completedStages ?? [];
   const totalInsights = getInsightsByScenario(scenario.id).length;
@@ -46,7 +50,7 @@ function ScenarioCard({
             <h3 className="font-semibold text-stone-900">
               {lang === 'en' ? scenario.titleEn : scenario.titleZh}
             </h3>
-            {isCompleted && (
+            {mounted && isCompleted && (
               <span className="text-emerald-600 text-xs bg-emerald-50 px-2 py-0.5 rounded-full font-medium">
                 ✓ {t('journey.completed', lang)}
               </span>
@@ -56,9 +60,15 @@ function ScenarioCard({
             {lang === 'en' ? scenario.subtitleEn : scenario.subtitleZh}
           </p>
           <div className="flex items-center gap-4 mt-2 text-xs text-stone-300">
-            <span>{t('journey.stagesCompleted', lang, { n: completedStages.length })}</span>
-            {totalInsights > 0 && (
-              <span>{t('journey.insightsFound', lang, { n: `${collectedInsights}/${totalInsights}` })}</span>
+            {mounted ? (
+              <>
+                <span>{t('journey.stagesCompleted', lang, { n: completedStages.length })}</span>
+                {totalInsights > 0 && (
+                  <span>{t('journey.insightsFound', lang, { n: `${collectedInsights}/${totalInsights}` })}</span>
+                )}
+              </>
+            ) : (
+              <span>&nbsp;</span>
             )}
           </div>
         </div>
@@ -91,7 +101,58 @@ function LockedCard({ scenario, lang }: { scenario: ScenarioConfig; lang: Langua
 
 export function JourneyMap({ lang }: JourneyMapProps) {
   const router = useRouter();
-  const progress = loadProgress();
+  const [mounted, setMounted] = useState(false);
+  const [progress, setProgress] = useState<GameProgress>(() => loadProgress());
+
+  useEffect(() => {
+    setMounted(true);
+    setProgress(loadProgress());
+  }, []);
+
+  // Defer scenario unlock logic until client-side mount to avoid hydration mismatch
+  if (!mounted) {
+    return (
+      <div className="space-y-8 pb-8">
+        {(['beginner', 'intermediate', 'advanced'] as DifficultyTier[]).map((tier) => {
+          const tierScenarios = getScenariosByTier(tier);
+          const cfg = TIER_CONFIG[tier];
+          return (
+            <div key={tier}>
+              <div className="flex items-center gap-2 mb-3">
+                <div className={`w-2 h-2 rounded-full ${cfg.dot}`} />
+                <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider">
+                  {lang === 'en' ? cfg.en : cfg.zh}
+                </h2>
+              </div>
+              <div className="space-y-2">
+                {tierScenarios.map((scenario) => (
+                  <div key={scenario.id} className="w-full p-4 bg-white rounded-xl border border-stone-200 animate-pulse">
+                    <div className="flex items-start gap-4">
+                      <span className="text-3xl">{scenario.icon}</span>
+                      <div className="flex-1">
+                        <div className="h-5 bg-stone-200 rounded w-3/4 mb-2" />
+                        <div className="h-3 bg-stone-100 rounded w-1/2" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        <div className="w-full p-4 bg-white rounded-xl border border-stone-200 animate-pulse">
+          <div className="flex items-center gap-4">
+            <span className="text-3xl">📖</span>
+            <div className="flex-1">
+              <div className="h-5 bg-stone-200 rounded w-2/3 mb-2" />
+              <div className="h-3 bg-stone-100 rounded w-1/2" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const completedIds = progress.completedScenarios as ScenarioId[];
   const unlocked = getUnlockedScenarios(completedIds);
   const tiers: DifficultyTier[] = ['beginner', 'intermediate', 'advanced'];
@@ -145,8 +206,11 @@ export function JourneyMap({ lang }: JourneyMapProps) {
               {t('journey.wisdomBookDesc', lang)}
             </p>
             <p className="text-xs text-amber-600 mt-1 font-medium">
-              {progress.totalInsightsCollected}{' '}
-              {lang === 'en' ? 'collected' : '条已收集'}
+              {mounted ? (
+                <>{progress.totalInsightsCollected} {lang === 'en' ? 'collected' : '条已收集'}</>
+              ) : (
+                <>&nbsp;</>
+              )}
             </p>
           </div>
           <span className="text-stone-300">→</span>

@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
   const dsBody: Record<string, unknown> = {
     model: 'deepseek-v4-pro',
     prompt: prompt as string,
-    max_tokens: 80,
+    max_tokens: 20,
     temperature: 0.3,
     stream: true,
   };

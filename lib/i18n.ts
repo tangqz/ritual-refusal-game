@@ -159,6 +159,40 @@ const texts = {
       en: 'Replay This Scenario',
       zh: '重玩本场景',
     },
+    // Annotations
+    phraseCoaching: {
+      en: '🗣️ Phrase-by-Phrase Coaching',
+      zh: '🗣️ 逐句精修指导',
+    },
+    phraseCoachingDesc: {
+      en: "Auntie has reviewed your word choices — green means you nailed it, yellow means there's a smoother way to say it. Hover to read the notes.",
+      zh: '阿姨仔细看了你的每一句表达——绿色是你说得特别好的地方，黄色是可以说得更圆融的地方。鼠标悬停查看详细点评。',
+    },
+    goodPhrase: {
+      en: '🌟 Well said!',
+      zh: '🌟 说得好！',
+    },
+    improvePhrase: {
+      en: '💡 Smoother way',
+      zh: '💡 可以更圆融',
+    },
+    // Loading progress steps
+    loadingStep1: {
+      en: 'Thinking about your conversation...',
+      zh: '正在回味你的对话……',
+    },
+    loadingStep2: {
+      en: 'Finding the perfect title for you...',
+      zh: '正在为你寻觅一个贴切的称号……',
+    },
+    loadingStep3: {
+      en: 'Putting together Auntie\'s overall thoughts...',
+      zh: '正在整理阿姨的总体评价……',
+    },
+    loadingStep4: {
+      en: 'Polishing phrase-by-phrase tips for you...',
+      zh: '正在逐字逐句为你打磨建议……',
+    },
   },
 
   // ========== Auntie's Wisdom ==========

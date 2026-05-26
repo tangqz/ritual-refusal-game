@@ -1,14 +1,20 @@
 'use client';
-import { useState, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { JourneyMap } from '@/components/game/JourneyMap';
 import { LanguageToggle } from '@/components/ui/LanguageToggle';
 import type { Language } from '@/lib/i18n';
 import { t } from '@/lib/i18n';
-import { loadProgress } from '@/lib/game-progress-store';
+import { loadProgress, type GameProgress } from '@/lib/game-progress-store';
 
 function GameHomeContent() {
   const [lang, setLang] = useState<Language>('en');
-  const progress = loadProgress();
+  const [mounted, setMounted] = useState(false);
+  const [progress, setProgress] = useState<GameProgress>(() => loadProgress());
+
+  useEffect(() => {
+    setMounted(true);
+    setProgress(loadProgress());
+  }, []);
 
   return (
     <div className="min-h-screen bg-stone-50 p-4">
@@ -24,7 +30,7 @@ function GameHomeContent() {
             <p className="text-sm text-stone-400">
               {t('journey.subtitle', lang)}
             </p>
-            {progress.totalInsightsCollected > 0 && (
+            {mounted && progress.totalInsightsCollected > 0 && (
               <p className="text-xs text-stone-300 mt-2">
                 📖 {progress.totalInsightsCollected}{' '}
                 {lang === 'en' ? 'insights' : '条智慧'}

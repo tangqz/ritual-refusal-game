@@ -5,9 +5,7 @@ interface FillInInputProps {
   placeholder: string;
   disabled?: boolean;
   onSubmit: (text: string) => void;
-  /** Prompt sent to FIM API for auto-completion */
   fimPrompt: string;
-  /** Suffix for FIM (optional) */
   fimSuffix?: string;
   lang: 'en' | 'zh';
 }
@@ -16,15 +14,25 @@ export function FillInInput({ placeholder, disabled, onSubmit, fimPrompt, fimSuf
   const [value, setValue] = useState('');
   const [ghost, setGhost] = useState('');
   const [isFetchingGhost, setIsFetchingGhost] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const ghostRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const ghostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-resize textarea
+  const resizeTextarea = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }, []);
+
+  useEffect(() => { resizeTextarea(); }, [value, resizeTextarea]);
 
   // Fetch ghost completion from FIM API
   const fetchGhost = useCallback(async (currentValue: string) => {
     if (!currentValue.trim()) { setGhost(''); return; }
 
-    // Abort any in-flight request
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -65,14 +73,11 @@ export function FillInInput({ placeholder, disabled, onSubmit, fimPrompt, fimSuf
             if (evt.type === 'chunk' && evt.text) {
               completion += evt.text;
               setGhost(completion);
-            } else if (evt.type === 'done') {
-              // keep current ghost
             }
           } catch { /* skip */ }
         }
       }
     } catch {
-      // Aborted or network error — silently ignore
       setGhost('');
     } finally {
       setIsFetchingGhost(false);
@@ -96,7 +101,15 @@ export function FillInInput({ placeholder, disabled, onSubmit, fimPrompt, fimSuf
     return () => { abortRef.current?.abort(); };
   }, []);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleSend = () => {
+    const finalText = value.trim();
+    if (!finalText || disabled) return;
+    onSubmit(finalText);
+    setValue('');
+    setGhost('');
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Tab: accept ghost completion
     if (e.key === 'Tab' && ghost) {
       e.preventDefault();
@@ -104,14 +117,14 @@ export function FillInInput({ placeholder, disabled, onSubmit, fimPrompt, fimSuf
       setValue(newValue);
       setGhost('');
     }
-    // Enter: submit
+    // Enter (no shift): submit — only send what user actually typed (ghost only if accepted via Tab/click)
     if (e.key === 'Enter' && !e.shiftKey && value.trim()) {
       e.preventDefault();
-      const finalText = (value + ghost).trim();
-      onSubmit(finalText);
+      onSubmit(value.trim());
       setValue('');
       setGhost('');
     }
+    // Shift+Enter: newline — let default behaviour through
   };
 
   const handleGhostTap = () => {
@@ -119,39 +132,59 @@ export function FillInInput({ placeholder, disabled, onSubmit, fimPrompt, fimSuf
       const newValue = value + ghost;
       setValue(newValue);
       setGhost('');
-      inputRef.current?.focus();
+      textareaRef.current?.focus();
     }
   };
 
   return (
     <div className="relative w-full">
       <div className="relative">
-        <input
-          ref={inputRef}
-          type="text"
+        <textarea
+          ref={textareaRef}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value);
+          }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
-          className="w-full p-3.5 pr-20 bg-white border border-stone-200 rounded-xl text-stone-700
+          rows={1}
+          className="w-full p-3.5 pr-16 bg-white border border-stone-200 rounded-xl text-stone-700
             text-sm md:text-base placeholder:text-stone-300 focus:outline-none focus:border-amber-300
-            disabled:opacity-40 transition-colors"
+            disabled:opacity-40 transition-colors resize-none overflow-hidden"
           autoFocus
         />
+        {/* Send button — bottom-right */}
+        {value.trim() && (
+          <button
+            onClick={handleSend}
+            disabled={disabled}
+            className="absolute bottom-2 right-2 w-9 h-9 flex items-center justify-center
+              rounded-lg bg-amber-500 text-white hover:bg-amber-600 active:scale-95
+              disabled:opacity-30 transition-all shadow-sm"
+            aria-label={lang === 'en' ? 'Send' : '发送'}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M3 13.5h12.17l-5.58 5.59L11 20.5l8-8.5-8-8.5-1.41 1.41 5.58 5.59H3v2z" />
+            </svg>
+          </button>
+        )}
         {/* Ghost text overlay */}
         {ghost && (
           <div
-            className="absolute inset-0 flex items-center pointer-events-none px-3.5"
+            ref={ghostRef}
+            className="absolute inset-0 flex items-start pointer-events-none p-3.5 pr-16 overflow-hidden"
             aria-hidden="true"
           >
-            <span className="text-sm md:text-base text-transparent">{value}</span>
-            <span
-              className="text-sm md:text-base text-stone-300 cursor-pointer pointer-events-auto select-none"
-              onClick={handleGhostTap}
-              title={lang === 'en' ? 'Tap to accept suggestion' : '点击接受建议'}
-            >
-              {ghost}
+            <span className="text-sm md:text-base whitespace-pre-wrap break-words">
+              <span className="text-transparent">{value}</span>
+              <span
+                className="text-stone-300 cursor-pointer pointer-events-auto select-none"
+                onClick={handleGhostTap}
+                title={lang === 'en' ? 'Click to accept suggestion' : '点击接受建议'}
+              >
+                {ghost}
+              </span>
             </span>
           </div>
         )}
@@ -159,11 +192,10 @@ export function FillInInput({ placeholder, disabled, onSubmit, fimPrompt, fimSuf
       {/* Hint */}
       <div className="flex items-center justify-between mt-2 px-1">
         <span className="text-xs text-stone-400">
-          {lang === 'en' ? 'Type your response — ' : '输入你的回应 — '}
           <span className="text-stone-500 font-medium">
             {lang === 'en' ? 'Tab' : 'Tab键'}
           </span>
-          {lang === 'en' ? ' to accept suggestion, ' : ' 接受建议，'}
+          {lang === 'en' ? ' or tap suggestion to accept · ' : '或点击补全文字应用 · '}
           <span className="text-stone-500 font-medium">Enter</span>
           {lang === 'en' ? ' to send' : ' 发送'}
         </span>
