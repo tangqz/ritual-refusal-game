@@ -36,6 +36,10 @@ type SectionType =
   | 'OPTIONS' | 'WISDOM' | 'CONTEXT' | 'END'
   | null;
 
+/** Maximum characters per section before truncation. Prevents memory bloat if
+ *  the LLM generates an extremely long monologue in a single tag section. */
+const MAX_SECTION_LENGTH = 5000;
+
 const OPEN_TAGS: [SectionType, RegExp][] = [
   ['NPC', /^<<NPC>>$/],
   ['PLAYER', /^<<PLAYER>>$/],
@@ -147,7 +151,12 @@ export class StreamParser {
 
     // Accumulate content and update live text
     if (this.currentSection) {
-      this.buffer.push(line);
+      // Safeguard: stop accumulating if section is already at max length.
+      // Prevents memory bloat from runaway LLM output in a single tag section.
+      const currentContent = this.buffer.join('\n');
+      if (currentContent.length < MAX_SECTION_LENGTH) {
+        this.buffer.push(line);
+      }
       const content = this.buffer.join('\n');
 
       switch (this.currentSection) {
@@ -344,6 +353,39 @@ export class StreamParser {
     }
     const firstLine = content.split('\n')[0]?.trim();
     if (firstLine) this.parsed.wisdom = { id: firstLine };
+  }
+
+  /** Validate parsed output against expected structure for the given stage. */
+  validateOutput(stage: string): { valid: boolean; issues: string[] } {
+    const issues: string[] = [];
+    const r = this.parsed;
+
+    if (!r.hasAnyTag && stage !== 'challenge') {
+      issues.push('No LLM output tags detected — raw text may not be parseable');
+    }
+
+    if (stage === 'observe') {
+      if (!r.npcText) issues.push('Observe mode: missing <<NPC>> dialogue');
+      if (!r.playerText) issues.push('Observe mode: missing <<PLAYER>> dialogue');
+    }
+
+    if (stage === 'guided') {
+      if (!r.npcText) issues.push('Guided mode: missing <<NPC>> dialogue');
+      if (r.options.length === 0 && !r.isEnd) issues.push('Guided mode: missing <<OPTIONS>> and no <<END>>');
+      if (!r.feedbackText && r.options.length > 0) issues.push('Guided mode: missing <<FEEDBACK>> after options');
+    }
+
+    if (stage === 'practice') {
+      if (!r.npcText) issues.push('Practice mode: missing <<NPC>> dialogue');
+      if (!r.feedbackText && !r.isEnd) issues.push('Practice mode: missing <<FEEDBACK>>');
+    }
+
+    // Wisdom reference check (all modes)
+    if (r.wisdom && !r.wisdom.id) {
+      issues.push('Wisdom card referenced but has no id');
+    }
+
+    return { valid: issues.length === 0, issues };
   }
 
   getResult(): ParsedSections {

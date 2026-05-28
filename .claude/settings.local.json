@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "WebFetch(domain:api-docs.deepseek.com)",
+      "Bash(npx tsc *)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(git *)",
+      "Bash(Start-Sleep -Seconds 5)",
+      "Bash(Get-Content \"C:\\\\Users\\\\qizhi\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-qizhi-Desktop-coding-ChineseAdoptee\\\\3e871284-d9b6-42ab-8302-986b45519661\\\\tasks\\\\beeyigpnz.output\")",
+      "Bash(./node_modules/.bin/tsc *)",
+      "Bash(New-Item -ItemType File -Path \"c:\\\\Users\\\\qizhi\\\\Desktop\\\\coding\\\\ChineseAdoptee\\\\chinese-ritual-game\\\\app\\\\privacy\\\\page.tsx\" -Force)",
+      "Bash(Out-Null)",
+      "PowerShell(New-Item *)",
+      "Bash(npm test *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\qizhi\\\\Desktop\\\\coding\\\\ChineseAdoptee\" -Force)",
+      "Bash(Select-Object Name, Length, Mode)",
+      "Bash(node *)",
+      "Bash(npx vitest *)"
+    ]
+  },
+  "outputStyle": "default"
+}

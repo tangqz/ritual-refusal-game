@@ -22,6 +22,23 @@ export interface GameProgress {
 
 const STORAGE_KEY = 'cultural-compass-progress';
 
+let storageAvailable: boolean | null = null;
+
+/** Check whether localStorage is available and writable on this device. */
+export function isStorageAvailable(): boolean {
+  if (storageAvailable !== null) return storageAvailable;
+  if (typeof window === 'undefined') return false;
+  try {
+    const testKey = `${STORAGE_KEY}--test`;
+    localStorage.setItem(testKey, '1');
+    localStorage.removeItem(testKey);
+    storageAvailable = true;
+  } catch {
+    storageAvailable = false;
+  }
+  return storageAvailable;
+}
+
 function emptyProgress(): GameProgress {
   return {
     onboardingCompleted: false,
@@ -42,13 +59,57 @@ export function loadProgress(): GameProgress {
       ...emptyProgress(),
       ...parsed,
     };
-  } catch {
+  } catch (e) {
+    console.error('[CulturalCompass] Progress data corrupted, attempting recovery:', e);
+    // Save a backup of the corrupted data for debugging
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        localStorage.setItem(`${STORAGE_KEY}-corrupted-backup`, raw);
+      }
+    } catch {
+      // Can't even save backup — storage may be full
+    }
+    // Try to recover partial data by parsing individual fields
+    try {
+      const partial = recoverPartialProgress();
+      if (partial) {
+        console.warn('[CulturalCompass] Partial progress recovered.');
+        saveProgress(partial);
+        return partial;
+      }
+    } catch {
+      // Recovery failed
+    }
+    // Last resort: reset and start fresh
+    localStorage.removeItem(STORAGE_KEY);
+    console.warn('[CulturalCompass] Progress reset due to unrecoverable corruption.');
     return emptyProgress();
   }
 }
 
+function recoverPartialProgress(): GameProgress | null {
+  // Attempt to salvage what we can from individual localStorage keys
+  // This is a best-effort recovery — if the main key is corrupted,
+  // we fall back to an empty state rather than guessing
+  const backup = localStorage.getItem(`${STORAGE_KEY}-backup`);
+  if (backup) {
+    try {
+      const parsed = JSON.parse(backup) as GameProgress;
+      return { ...emptyProgress(), ...parsed };
+    } catch {
+      // Backup also corrupted
+    }
+  }
+  return null;
+}
+
 export function saveProgress(progress: GameProgress): void {
   if (typeof window === 'undefined') return;
+  if (!isStorageAvailable()) {
+    console.warn('[CulturalCompass] Cannot save progress — localStorage is not available on this device.');
+    return;
+  }
   progress.lastActiveAt = new Date().toISOString();
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));

@@ -847,35 +847,55 @@ export function getObserveScript(scenarioId: string, lang: 'en' | 'zh'): Observe
  * Split text into pseudo-streaming chunks for typewriter effect.
  * Returns an array of string chunks that can be revealed with delays.
  */
+const SENTENCE_END_RE = /[.!?。！？…]/;
+const COMMA_BREAK_RE = /[,;，；：:、—–-]/;
+const HORIZONTAL_WS_RE = /[^\S\n]/;
+
 export function chunkForStreaming(text: string): string[] {
   // Build chunks by scanning character-by-character, preserving all whitespace.
   // Split at sentence-ending punctuation (including following whitespace in the chunk),
   // and at comma-like breaks when a chunk grows too long.
+  // Consecutive punctuation (e.g. "...", "?!", "。。") stays in one chunk.
   const chunks: string[] = [];
-  let current = '';
+  let current = "";
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
     current += char;
 
-    const isSentenceEnd = /[.!?。！？…\n]/.test(char);
-    const isCommaBreak = /[,;，；：:—\-–]/.test(char);
+    const isSentenceEnd = SENTENCE_END_RE.test(char);
+    const isNewline = char === "\n";
+    const isCommaBreak = COMMA_BREAK_RE.test(char);
 
-    if (isSentenceEnd) {
-      // Absorb trailing whitespace into this chunk
-      while (i + 1 < text.length && /\s/.test(text[i + 1])) {
+    if (isSentenceEnd || isNewline) {
+      if (isSentenceEnd) {
+        // Absorb consecutive sentence-ending punctuation into the same chunk
+        // so "..." or "?!" don't split into separate chunks
+        while (i + 1 < text.length && SENTENCE_END_RE.test(text[i + 1])) {
+          current += text[++i];
+        }
+        // Absorb trailing horizontal whitespace
+        while (i + 1 < text.length && HORIZONTAL_WS_RE.test(text[i + 1])) {
+          current += text[++i];
+        }
+      }
+      chunks.push(current);
+      current = "";
+    } else if (isCommaBreak && current.length > 80) {
+      // Absorb consecutive comma-break punctuation
+      while (i + 1 < text.length && COMMA_BREAK_RE.test(text[i + 1])) {
+        current += text[++i];
+      }
+      // Absorb trailing horizontal whitespace after comma breaks too
+      while (i + 1 < text.length && HORIZONTAL_WS_RE.test(text[i + 1])) {
         current += text[++i];
       }
       chunks.push(current);
-      current = '';
-    } else if (isCommaBreak && current.length > 80) {
-      // Break long segments at natural pause points
-      chunks.push(current);
-      current = '';
+      current = "";
     }
   }
 
-  if (current.trim()) {
+  if (current) {
     chunks.push(current);
   }
 

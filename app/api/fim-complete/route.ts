@@ -1,39 +1,62 @@
 import { NextRequest } from 'next/server';
 import { logFimRequest, logFimResponse, logFimError, rid } from '@/lib/llm-logger';
+import { fimCompleteRequestSchema } from '@/lib/validation';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
+import { apiMsg } from '@/lib/i18n';
 
 export async function POST(request: NextRequest) {
   const requestId = rid();
   const startTime = Date.now();
 
+  // Rate limiting
+  const sessionId = request.headers.get('x-session-id') || request.headers.get('x-forwarded-for') || 'anonymous';
+  const { allowed, remaining } = checkRateLimit(`fim:${sessionId}`, RATE_LIMITS.fim);
+  if (!allowed) {
+    return new Response(JSON.stringify({ error: apiMsg('tooManyRequests', 'en') }), {
+      status: 429,
+      headers: {
+        'Content-Type': 'application/json',
+        'Retry-After': '60',
+        'X-RateLimit-Remaining': String(remaining),
+      },
+    });
+  }
+
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'API key not configured' }), {
+    return new Response(JSON.stringify({ error: apiMsg('apiKeyNotConfigured', 'en') }), {
       status: 500, headers: { 'Content-Type': 'application/json' },
     });
   }
 
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+    return new Response(JSON.stringify({ error: apiMsg('invalidJsonBody', 'en') }), {
       status: 400, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const { prompt, suffix, stop } = body;
-  if (!prompt) {
-    return new Response(JSON.stringify({ error: 'Missing prompt' }), {
+  // Zod validation
+  const parsed = fimCompleteRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return new Response(JSON.stringify({
+      error: apiMsg('validationFailed', 'en'),
+      details: parsed.error.flatten().fieldErrors,
+    }), {
       status: 400, headers: { 'Content-Type': 'application/json' },
     });
   }
+
+  const { prompt, suffix, stop } = parsed.data;
 
   logFimRequest(requestId, {
-    promptLength: (prompt as string).length,
-    suffixLength: (suffix as string)?.length || 0,
+    promptLength: prompt.length,
+    suffixLength: suffix?.length || 0,
   });
 
   const dsBody: Record<string, unknown> = {
     model: 'deepseek-v4-pro',
-    prompt: prompt as string,
+    prompt,
     max_tokens: 20,
     temperature: 0.3,
     stream: true,
@@ -50,8 +73,8 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(dsBody),
     });
   } catch {
-    logFimError(requestId, { latencyMs: Date.now() - startTime, error: 'Failed to reach FIM API' });
-    return new Response(JSON.stringify({ error: 'Failed to reach FIM API' }), {
+    logFimError(requestId, { latencyMs: Date.now() - startTime, error: apiMsg('failedToReachApi', 'en') });
+    return new Response(JSON.stringify({ error: apiMsg('failedToReachApi', 'en') }), {
       status: 502, headers: { 'Content-Type': 'application/json' },
     });
   }
@@ -72,8 +95,8 @@ export async function POST(request: NextRequest) {
   // Stream the completion back — forward SSE text chunks
   const reader = dsResponse.body?.getReader();
   if (!reader) {
-    logFimError(requestId, { latencyMs: Date.now() - startTime, error: 'No response body' });
-    return new Response(JSON.stringify({ error: 'No response body' }), {
+    logFimError(requestId, { latencyMs: Date.now() - startTime, error: apiMsg('noResponseBody', 'en') });
+    return new Response(JSON.stringify({ error: apiMsg('noResponseBody', 'en') }), {
       status: 502, headers: { 'Content-Type': 'application/json' },
     });
   }
@@ -139,10 +162,10 @@ export async function POST(request: NextRequest) {
         console.error('FIM stream error:', e);
         logFimError(requestId, {
           latencyMs: Date.now() - startTime,
-          error: 'Stream interrupted',
+          error: apiMsg('streamInterrupted', 'en'),
         });
         controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: 'error', error: 'Stream interrupted' })}\n\n`)
+          encoder.encode(`data: ${JSON.stringify({ type: 'error', error: apiMsg('streamInterrupted', 'en') })}\n\n`)
         );
       } finally {
         controller.close();

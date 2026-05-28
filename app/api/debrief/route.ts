@@ -1,6 +1,10 @@
 import { NextRequest } from 'next/server';
 import type { ScenarioId } from '@/lib/scenario-config';
 import { SCENARIOS } from '@/lib/scenario-config';
+import { debriefRequestSchema } from '@/lib/validation';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
+import { apiMsg } from '@/lib/i18n';
+import { fetchWithRetry } from '@/lib/fetch-utils';
 
 export interface AnnotationItem {
   type: 'good' | 'improve';
@@ -13,63 +17,81 @@ export interface AnnotationItem {
 }
 
 export async function POST(request: NextRequest) {
+  // Rate limiting
+  const sessionId = request.headers.get('x-session-id') || request.headers.get('x-forwarded-for') || 'anonymous';
+  const { allowed, remaining } = checkRateLimit(`debrief:${sessionId}`, RATE_LIMITS.debrief);
+  if (!allowed) {
+    return new Response(JSON.stringify({ error: apiMsg('tooManyDebriefRequests', 'en') }), {
+      status: 429,
+      headers: {
+        'Content-Type': 'application/json',
+        'Retry-After': '60',
+        'X-RateLimit-Remaining': String(remaining),
+      },
+    });
+  }
+
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'API key not configured' }), {
+    return new Response(JSON.stringify({ error: apiMsg('apiKeyNotConfigured', 'en') }), {
       status: 500, headers: { 'Content-Type': 'application/json' },
     });
   }
 
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+    return new Response(JSON.stringify({ error: apiMsg('invalidJsonBody', 'en') }), {
       status: 400, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const { messages, scenarioId, stage, roundsPlayed, insightsCollected, lang } = body;
-  if (!scenarioId || !messages) {
-    return new Response(JSON.stringify({ error: 'Missing required fields' }), {
+  // Zod validation
+  const parsed = debriefRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return new Response(JSON.stringify({
+      error: apiMsg('validationFailed', 'en'),
+      details: parsed.error.flatten().fieldErrors,
+    }), {
       status: 400, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const language = (lang as string) || 'en';
+  const { messages, scenarioId, stage, roundsPlayed, insightsCollected, lang } = parsed.data;
+  const language = lang || 'en';
   const scenario = SCENARIOS[scenarioId as ScenarioId];
   const scenarioTitle = language === 'en' ? scenario?.titleEn : scenario?.titleZh;
   const scenarioTheme = language === 'en' ? scenario?.themeEn : scenario?.themeZh;
 
-  // Build conversation transcript for the LLM
-  const allMessages = (messages as Array<{ role: string; content: string }>)
-    .filter(m => m.role === 'assistant' || m.role === 'user');
+  // Build a unified transcript that numbers messages and marks user messages
+  // for annotation reference — avoids duplicating content and saves context.
+  const allMessages = messages.filter(m => m.role === 'assistant' || m.role === 'user');
+  const npcLabel = language === 'en' ? 'NPC (Auntie/Uncle)' : 'NPC（阿姨/叔叔）';
+  const playerLabel = language === 'en' ? 'Player (You)' : '玩家（你）';
 
-  // Build a numbered user-message list for annotation reference
-  const userMessages = allMessages
-    .map((m, i) => ({ index: i, role: m.role, content: m.content }))
-    .filter(m => m.role === 'user');
-  const userMsgList = userMessages
-    .map((m, i) => `[UserMsg#${i}] ${m.content}`)
-    .join('\n');
-
+  let userMsgIdx = 0;
   const transcript = allMessages
-    .map(m => {
-      const label = m.role === 'assistant'
-        ? (language === 'en' ? 'NPC (Auntie/Uncle)' : 'NPC（阿姨/叔叔）')
-        : (language === 'en' ? 'Player (You)' : '玩家（你）');
-      return `${label}: ${m.content}`;
+    .map((m, i) => {
+      if (m.role === 'assistant') {
+        return `[${i + 1}] ${npcLabel}: ${m.content}`;
+      }
+      const line = `[${i + 1}] ${playerLabel} [UserMsg#${userMsgIdx}]: ${m.content}`;
+      userMsgIdx++;
+      return line;
     })
     .join('\n\n');
 
-  const isGuided = (stage as string) === 'guided';
+  const userMsgCount = userMsgIdx;
+
+  const isGuided = stage === 'guided';
 
   const systemPrompt = (() => {
     const baseEn = `You are a warm, insightful cultural debrief assistant for a game called "Cultural Compass" that teaches Chinese social navigation to Chinese adoptees raised abroad.
 
-The player just completed the "${scenarioTitle}" scenario (theme: "${scenarioTheme}") in ${stage} mode, with ${roundsPlayed} exchanges and ${(insightsCollected as string[])?.length || 0} wisdom cards collected.`;
+The player just completed the "${scenarioTitle}" scenario (theme: "${scenarioTheme}") in ${stage} mode, with ${roundsPlayed} exchanges and ${insightsCollected?.length || 0} wisdom cards collected.`;
 
     const baseZh = `你是一个温暖、有洞察力的文化复盘助手，为一款叫"文化指南针"的游戏撰写反馈。这款游戏帮助在海外长大的华裔被收养者学习中国社交礼仪。
 
-玩家刚完成了"${scenarioTitle}"场景（主题："${scenarioTheme}"），模式为${stage}，共${roundsPlayed}轮对话，收集了${(insightsCollected as string[])?.length || 0}张智慧卡片。`;
+玩家刚完成了"${scenarioTitle}"场景（主题："${scenarioTheme}"），模式为${stage}，共${roundsPlayed}轮对话，收集了${insightsCollected?.length || 0}张智慧卡片。`;
 
     // Guided mode: title + summary only (no annotations)
     if (isGuided) {
@@ -118,7 +140,7 @@ PART 2 — DEBRIEF SUMMARY (1 short paragraph, ~80 words MAX):
 Pick ONE thing the player did well and ONE gentle growth tip. Be specific but concise. End with a warm, encouraging sentence. Use pinyin (汉字) for key cultural terms.
 
 PART 3 — PHRASE-LEVEL COACHING:
-Below are the player's messages, numbered. For each, identify phrases that show good cultural awareness (GOOD) or could be phrased more harmoniously (IMPROVE).
+In the conversation above, each player message is tagged with [UserMsg#N]. For those messages, identify phrases that show good cultural awareness (GOOD) or could be phrased more harmoniously (IMPROVE).
 
 Rules:
 - Each on its own line: GOOD|msg#|exact phrase|warm explanation (1-2 sentences)
@@ -146,7 +168,7 @@ IMPROVE|1|phrase|Try saying "..." instead because...`;
 挑出玩家做得最好的一个点，和一条温和的成长建议。以一句温暖的鼓励收尾。
 
 第三部分 — 逐句精修指导：
-以下是玩家的发言，已按顺序编号。找出体现良好文化意识（GOOD）或可以表达得更得体（IMPROVE）的说法。
+在上面对话中，每条玩家发言都标注了[UserMsg#编号]。找出体现良好文化意识（GOOD）或可以表达得更得体（IMPROVE）的说法。
 
 规则：
 - 每条一行：GOOD|编号|原句原词|温暖解释（1-2句）
@@ -165,25 +187,23 @@ IMPROVE|1|原句片段|试试换成"……"因为……`;
   })();
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 50000); // 50s timeout for streaming
-
-    const dsResponse = await fetch('https://api.deepseek.com/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'deepseek-v4-pro',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `=== FULL CONVERSATION ===\n${transcript}\n\n=== PLAYER MESSAGES (numbered for annotation) ===\n${userMsgList}` },
-        ],
-        max_tokens: 4000,
-        stream: true,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
+    const dsResponse = await fetchWithRetry(
+      'https://api.deepseek.com/chat/completions',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'deepseek-v4-pro',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `=== CONVERSATION (${userMsgCount} player messages, numbered for annotation) ===\n\n${transcript}` },
+          ],
+          max_tokens: 8000,
+          stream: true,
+        }),
+        signal: AbortSignal.timeout(50000),
+      },
+    );
 
     if (!dsResponse.ok) {
       const errText = await dsResponse.text();
@@ -194,7 +214,7 @@ IMPROVE|1|原句片段|试试换成"……"因为……`;
 
     const dsReader = dsResponse.body?.getReader();
     if (!dsReader) {
-      return new Response(JSON.stringify({ error: 'No response body' }), {
+      return new Response(JSON.stringify({ error: apiMsg('noResponseBody', language) }), {
         status: 502, headers: { 'Content-Type': 'application/json' },
       });
     }
@@ -270,7 +290,7 @@ IMPROVE|1|原句片段|试试换成"……"因为……`;
             }
           }
         } catch {
-          enqueue({ type: 'error', error: 'Stream interrupted' });
+          enqueue({ type: 'error', error: apiMsg('streamInterrupted', language) });
           ctrl.close();
           return;
         }
@@ -286,9 +306,24 @@ IMPROVE|1|原句片段|试试换成"……"因为……`;
 
         // Parse final result
         const parts = rawContent.split('---');
-        const title = parts[0]?.trim() || null;
-        const summary = parts[1]?.trim() || rawContent;
+        let title = parts[0]?.trim() || null;
+        let summary = parts[1]?.trim() || rawContent;
         const annotationsRaw = parts.slice(2).join('---').trim();
+
+        // Format validation: reject malformed titles and summaries
+        const fallbackTitle = language === 'en' ? 'Your Cultural Journey' : '你的文化之旅';
+        const fallbackSummary = language === 'en'
+          ? 'You navigated this conversation with care. Each interaction is a step toward deeper cultural understanding. Keep exploring!'
+          : '你用心的完成了这次对话。每一次互动都是深入理解文化的一步。继续探索吧！';
+
+        // Title validation: should be short and not contain format markers
+        if (title && (title.length > 120 || title.includes('|') || title.includes('<<'))) {
+          title = fallbackTitle;
+        }
+        // Summary validation: should have reasonable length
+        if (summary.length < 20 || summary.length > 800) {
+          summary = fallbackSummary;
+        }
 
         const annotations: AnnotationItem[] = [];
         if (annotationsRaw) {
@@ -296,17 +331,19 @@ IMPROVE|1|原句片段|试试换成"……"因为……`;
           for (const annLine of annLines) {
             let t = annLine.trim();
             if (!t) continue;
-            // Normalize full-width pipes and spaces
-            t = t.replace(/｜/g, '|').replace(/\s*\|\s*/g, '|');
-            const pipeIdx1 = t.indexOf('|');
-            const pipeIdx2 = t.indexOf('|', pipeIdx1 + 1);
-            const pipeIdx3 = t.indexOf('|', pipeIdx2 + 1);
-            if (pipeIdx1 === -1 || pipeIdx2 === -1 || pipeIdx3 === -1) continue;
+            // Normalize full-width pipes
+            t = t.replace(/｜/g, '|');
 
-            const typeStr = t.slice(0, pipeIdx1).trim().toLowerCase();
-            const msgIdxStr = t.slice(pipeIdx1 + 1, pipeIdx2).trim();
-            const phrase = t.slice(pipeIdx2 + 1, pipeIdx3).trim();
-            const explanation = t.slice(pipeIdx3 + 1).trim();
+            // Split on first 3 pipes: TYPE|msg#|phrase|explanation
+            // Use split with limit to handle | in phrase/explanation gracefully
+            const parts = t.split('|');
+            if (parts.length < 4) continue;
+
+            const typeStr = parts[0].trim().toLowerCase();
+            const msgIdxStr = parts[1].trim();
+            const phrase = parts[2].trim();
+            // Rejoin remaining parts in case explanation contained |
+            const explanation = parts.slice(3).join('|').trim();
 
             const type = typeStr === 'good' ? 'good' : typeStr === 'improve' ? 'improve' : null;
             const userMsgIndex = parseInt(msgIdxStr, 10);
@@ -334,7 +371,7 @@ IMPROVE|1|原句片段|试试换成"……"因为……`;
       },
     });
   } catch {
-    return new Response(JSON.stringify({ error: 'Failed to reach API' }), {
+    return new Response(JSON.stringify({ error: apiMsg('failedToReachApi', language) }), {
       status: 502, headers: { 'Content-Type': 'application/json' },
     });
   }

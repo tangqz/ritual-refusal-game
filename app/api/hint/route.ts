@@ -1,36 +1,64 @@
 import { NextRequest } from 'next/server';
 import { logHintRequest, logHintResponse, logHintError, rid } from '@/lib/llm-logger';
 import { getScenarioGoal } from '@/lib/scenario-goals';
+import { hintRequestSchema } from '@/lib/validation';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
+import { apiMsg } from '@/lib/i18n';
+import { fetchWithRetry } from '@/lib/fetch-utils';
 
 export async function POST(request: NextRequest) {
   const requestId = rid();
   const startTime = Date.now();
 
+  // Rate limiting
+  const sessionId = request.headers.get('x-session-id') || request.headers.get('x-forwarded-for') || 'anonymous';
+  const { allowed, remaining } = checkRateLimit(`hint:${sessionId}`, RATE_LIMITS.hint);
+  if (!allowed) {
+    return new Response(JSON.stringify({ error: apiMsg('tooManyHintRequests', 'en') }), {
+      status: 429,
+      headers: {
+        'Content-Type': 'application/json',
+        'Retry-After': '60',
+        'X-RateLimit-Remaining': String(remaining),
+      },
+    });
+  }
+
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'API key not configured' }), {
+    return new Response(JSON.stringify({ error: apiMsg('apiKeyNotConfigured', 'en') }), {
       status: 500, headers: { 'Content-Type': 'application/json' },
     });
   }
 
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
+    return new Response(JSON.stringify({ error: apiMsg('invalidJsonBody', 'en') }), {
       status: 400, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const { messages, scenario, lang } = body;
-  const language = (lang as string) || 'en';
-  const goal = getScenarioGoal(scenario as string);
+  // Zod validation
+  const parsed = hintRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return new Response(JSON.stringify({
+      error: apiMsg('validationFailed', 'en'),
+      details: parsed.error.flatten().fieldErrors,
+    }), {
+      status: 400, headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
-  const userMessages = (messages as Array<{ role: string; content: string }>) || [];
-  const lastFew = userMessages.slice(-4).map(m => `${m.role}: ${m.content}`).join('\n');
+  const { messages, scenario, lang } = parsed.data;
+  const language = lang || 'en';
+  const goal = getScenarioGoal(scenario);
+
+  const lastFew = messages.slice(-4).map(m => `${m.role}: ${m.content}`).join('\n');
 
   logHintRequest(requestId, {
-    scenario: (scenario as string) || 'unknown',
+    scenario: scenario || 'unknown',
     lang: language,
-    messageCount: userMessages.length,
+    messageCount: messages.length,
   });
 
   const hintContextEn = goal?.hintContextEn || 'The player is learning Chinese social etiquette. Guide them toward the culturally appropriate response.';
@@ -64,17 +92,21 @@ Give ONE short, specific sentence (max 20 words). Be direct and practical — no
   ];
 
   try {
-    const dsResponse = await fetch('https://api.deepseek.com/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'deepseek-v4-pro',
-        messages: finalMessages,
-        max_tokens: 100,
-        temperature: 0.5,
-        stream: false,
-      }),
-    });
+    const dsResponse = await fetchWithRetry(
+      'https://api.deepseek.com/chat/completions',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'deepseek-v4-pro',
+          messages: finalMessages,
+          max_tokens: 100,
+          temperature: 0.5,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(15000),
+      },
+    );
 
     if (!dsResponse.ok) {
       const latency = Date.now() - startTime;
@@ -97,8 +129,8 @@ Give ONE short, specific sentence (max 20 words). Be direct and practical — no
       status: 200, headers: { 'Content-Type': 'application/json' },
     });
   } catch {
-    logHintError(requestId, { latencyMs: Date.now() - startTime, error: 'Failed to reach API' });
-    return new Response(JSON.stringify({ error: 'Failed to reach API' }), {
+    logHintError(requestId, { latencyMs: Date.now() - startTime, error: apiMsg('failedToReachApi', 'en') });
+    return new Response(JSON.stringify({ error: apiMsg('failedToReachApi', language) }), {
       status: 502, headers: { 'Content-Type': 'application/json' },
     });
   }

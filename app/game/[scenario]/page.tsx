@@ -13,7 +13,7 @@ import type { ScenarioId, LearningStage } from '@/lib/scenario-config';
 import { SCENARIOS } from '@/lib/scenario-config';
 import type { Language } from '@/lib/i18n';
 import { t } from '@/lib/i18n';
-import { getScenarioProgress, completeScenarioStage, collectInsight } from '@/lib/game-progress-store';
+import { getScenarioProgress, completeScenarioStage, collectInsight, isStorageAvailable } from '@/lib/game-progress-store';
 import { getInsightById } from '@/lib/cultural-insights';
 import type { AuntieWisdom } from '@/lib/cultural-insights';
 import { StreamParser, type ParsedSections } from '@/lib/stream-parser';
@@ -21,6 +21,7 @@ import type { GameTitle } from '@/lib/game-titles';
 import { parsedTitleToGameTitle } from '@/lib/game-titles';
 import { getObserveScript, chunkForStreaming, type ObserveScript } from '@/lib/observe-script';
 import { getScenarioGoal } from '@/lib/scenario-goals';
+import { filterLlmOutput } from '@/lib/content-filter';
 import type { AnnotationItem } from '@/app/api/debrief/route';
 
 const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
@@ -72,6 +73,47 @@ function getFallbackTitle(scenarioId: string, stage: string, lang: Language): { 
       ? `${s.en} in this scenario. Each interaction is a step toward understanding the beautiful complexity of Chinese social culture. Keep exploring — every conversation reveals a new layer of meaning.`
       : `${s.zh}。每一次互动都是理解中国社交文化之美的一步。继续探索——每次对话都会揭示新的意义层次。`,
   };
+}
+
+// Graceful degradation: warm NPC closing messages per scenario when API is unavailable.
+// The NPC gently ends the conversation without breaking character or referencing the error.
+function getFallbackNpcClosing(scenarioId: string, lang: Language): string {
+  const closings: Record<string, { en: string; zh: string }> = {
+    hongbao: {
+      en: '(smiles warmly, tucking the red envelope into your hand) Ai ya, Auntie is so happy you came today. Next time, come visit again — the door is always open for you. Take care on your way home!',
+      zh: '（温暖地笑着，把红包轻轻放进你手里）哎呀，阿姨今天真高兴你来了。下次再来玩——家门永远为你开着。路上小心！',
+    },
+    compliment: {
+      en: '(chuckles softly, eyes crinkling with warmth) You\'re so modest — that\'s exactly what makes you lovely. Auntie won\'t tease you anymore. Go on now, and don\'t forget to eat well!',
+      zh: '（轻声笑着，眼角满是温暖）你太谦虚了——这正是你可爱的地方。阿姨不逗你了。快去吧，别忘了好好吃饭！',
+    },
+    guest: {
+      en: '(nods with satisfaction, adjusting the teacups) You\'ve been such a wonderful guest. Auntie feels so happy hosting you. The tea will still be warm when you come next time.',
+      zh: '（满意地点点头，整理着茶杯）你真是个好客人。阿姨招待你特别开心。下次来茶还是热的。',
+    },
+    gift: {
+      en: '(beams, pressing your hands gently) The thought behind your gift makes it perfect. Auntie will treasure it. Now go on — and don\'t be a stranger!',
+      zh: '（笑容满面，轻轻握着你的手）你这礼物的心意让它变得完美。阿姨会好好珍惜的。快去吧——别生分了！',
+    },
+    bill: {
+      en: '(waves dismissively with a grin) Alright, you win this one — but next meal is on you! Auntie had a wonderful time. Drive safe, dear.',
+      zh: '（笑着摆摆手）好吧，这次让你赢了——下顿你请！阿姨今天吃得很开心。开车小心，亲爱的。',
+    },
+    dinner: {
+      en: '(pushes back from the table with a contented sigh) What a wonderful meal with wonderful company. Auntie\'s heart is full. Come back soon — the table is always set for you.',
+      zh: '（满足地推桌而起）美好的饭菜，美好的陪伴。阿姨心里满满的。快回来——桌上永远有你的位子。',
+    },
+    workplace: {
+      en: '(nods approvingly, standing to see you out) You handled that with real grace. Auntie is proud of you. Remember — in the workplace, relationships are the real currency.',
+      zh: '（赞许地点头，起身相送）你处理得真得体。阿姨为你骄傲。记住——在职场上，关系才是真正的货币。',
+    },
+    refusal: {
+      en: '(smiles with understanding) You have a good heart — knowing when to say no is just as important as knowing when to say yes. Auntie respects that deeply.',
+      zh: '（理解地微笑）你心地善良——知道什么时候说不和知道什么时候说是同样重要。阿姨深深尊重这一点。',
+    },
+  };
+  const c = closings[scenarioId] || closings.hongbao;
+  return lang === 'en' ? c.en : c.zh;
 }
 
 function GameContent() {
@@ -127,6 +169,9 @@ function GameContent() {
   const stageRef = useRef<LearningStage | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const pendingWisdomRef = useRef<AuntieWisdom | null>(null);
+  const tabIdRef = useRef(`tab_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
+  // Track whether the current hint fetch should be ignored (superseded by newer request)
+  const hintGenerationRef = useRef(0);
   // Track whether client already showed acceptance feedback for this round
   // Prevents duplicate feedback when LLM also generates <<FEEDBACK>> after acceptance
   const acceptanceFeedbackShownRef = useRef(false);
@@ -151,6 +196,23 @@ function GameContent() {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, options, observeWaiting, liveNpc, livePlayer]);
 
+  // Observe mode timeout safety: auto-advance if stuck in waiting state > 15s
+  useEffect(() => {
+    if (!observeWaiting || gameOver) return;
+    const timeout = setTimeout(() => {
+      if (endingRef.current) return;
+      const round = currentRoundRef.current;
+      if (round >= OBSERVE_MAX_ROUNDS) { endGame('max_rounds'); return; }
+      const script = getObserveScript(scenarioId, lang);
+      if (script && round < script.rounds.length) {
+        playObserveRound(script, round);
+      } else {
+        streamFetch(messagesRef.current, stageRef.current!, round + 1);
+      }
+    }, 15_000);
+    return () => clearTimeout(timeout);
+  }, [observeWaiting, gameOver, scenarioId, lang]);
+
   // Load progress client-side only to prevent hydration mismatch
   useEffect(() => {
     setMounted(true);
@@ -170,6 +232,38 @@ function GameContent() {
       abortRef.current?.abort();
     };
   }, [stage, gameOver]);
+
+  // Browser tab coordination: detect when the same game is open in multiple tabs
+  const [multiTabWarning, setMultiTabWarning] = useState(false);
+  const [storageWarning, setStorageWarning] = useState(false);
+
+  // Detect localStorage unavailability on mount
+  useEffect(() => {
+    if (mounted && !isStorageAvailable()) {
+      setStorageWarning(true);
+    }
+  }, [mounted]);
+  useEffect(() => {
+    if (!stage || gameOver) return;
+    let channel: BroadcastChannel;
+    try {
+      const channelName = `cultural-compass-${scenarioId}-${stage}`;
+      channel = new BroadcastChannel(channelName);
+      // Announce presence — if another tab hears this, it knows there's a duplicate
+      channel.postMessage({ type: 'heartbeat', tabId: tabIdRef.current });
+      // Listen for other tabs
+      channel.onmessage = (evt) => {
+        if (evt.data?.type === 'heartbeat' && evt.data?.tabId !== tabIdRef.current) {
+          setMultiTabWarning(true);
+        }
+      };
+    } catch {
+      // BroadcastChannel not supported (e.g., older browsers) — gracefully skip
+    }
+    return () => {
+      try { channel?.close(); } catch { /* ignore */ }
+    };
+  }, [stage, gameOver, scenarioId]);
 
   const startGame = (s: LearningStage) => {
     if (gameInitRef.current) return;
@@ -237,11 +331,15 @@ function GameContent() {
       if (!res.ok) {
         if ((res.status >= 500 || res.status === 429) && attempt < 2) {
           setIsStreaming(false);
-          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+          // Exponential backoff with jitter: base 1s, max 4s, ±25% random jitter
+          const base = Math.min(1000 * Math.pow(2, attempt), 4000);
+          const jitter = base * (0.75 + Math.random() * 0.5);
+          await new Promise(r => setTimeout(r, jitter));
           return streamFetch(history, currentStage, nextRound, attempt + 1);
         }
-        const err = await res.json().catch(() => ({ error: 'Request failed' }));
-        setMessages(p => [...p, { id: genId(), role: 'assistant', content: `${err.error || 'Error'}` }]);
+        const fallbackMsg = getFallbackNpcClosing(scenarioId, lang);
+        setMessages(p => [...p, { id: genId(), role: 'assistant', content: fallbackMsg }]);
+        setConversationEndAvailable(true);
         setStreamError(true); setIsLoading(false); setIsStreaming(false); return;
       }
 
@@ -313,7 +411,14 @@ function GameContent() {
 
       // Detect tag-less LLM output: LLM forgot format, output raw text without <<TAG>> wrappers.
       // In guided mode this means no options → player gets stuck. Retry once.
-      if (!result.hasAnyTag && currentStage === 'guided' && attempt === 0 && result.npcText) {
+      // Validate LLM output structure against stage requirements
+      const validation = parser.validateOutput(currentStage);
+      if (!validation.valid) {
+        console.warn(`[streamFetch] LLM output validation issues for stage=${currentStage}:`, validation.issues);
+      }
+
+      // Retry once if no recognized tags (LLM produced raw text)
+      if (!result.hasAnyTag && attempt === 0 && result.npcText) {
         console.warn('[streamFetch] LLM output has no tags (raw text). Retrying once...');
         await new Promise(r => setTimeout(r, 500));
         return streamFetch(history, currentStage, nextRound, 1);
@@ -327,7 +432,9 @@ function GameContent() {
         await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
         return streamFetch(history, currentStage, nextRound, attempt + 1);
       }
-      setMessages(p => [...p, { id: genId(), role: 'assistant', content: t('common.networkError', lang) }]);
+      const fallbackMsg = getFallbackNpcClosing(scenarioId, lang);
+      setMessages(p => [...p, { id: genId(), role: 'assistant', content: fallbackMsg }]);
+      setConversationEndAvailable(true);
       setStreamError(true);
     } finally { setIsLoading(false); setIsStreaming(false); }
   };
@@ -384,9 +491,10 @@ function GameContent() {
     // Skip LLM feedback if client already showed acceptance feedback for this round
     if (currentStage !== 'observe' && result.feedbackText && !acceptanceFeedbackShownRef.current) {
       const cleanedFeedback = cleanFeedbackText(result.feedbackText);
-      if (cleanedFeedback) {
+      const filtered = filterLlmOutput(cleanedFeedback);
+      if (filtered.text) {
         setMessages(p => {
-          const updated = [...p, { id: genId(), role: 'feedback' as const, content: cleanedFeedback }];
+          const updated = [...p, { id: genId(), role: 'feedback' as const, content: filtered.text }];
           messagesRef.current = updated; return updated;
         });
       }
@@ -397,8 +505,9 @@ function GameContent() {
     // Add NPC message with optional wisdom card — skip if NPC text is empty
     // (LLM may occasionally fail to generate <<NPC>>, which would create a broken empty bubble)
     if (result.npcText && result.npcText.trim()) {
+      const filteredNpc = filterLlmOutput(result.npcText);
       const npcMsg: Message = {
-        id: genId(), role: 'assistant', content: result.npcText,
+        id: genId(), role: 'assistant', content: filteredNpc.text,
         psychologyNote: result.psychologyText || undefined,
         wisdomCard,
       };
@@ -528,7 +637,9 @@ function GameContent() {
   };
 
   const handleHint = async () => {
-    if (isFetchingHint) return;
+    // Request deduplication: increment generation counter so any in-flight
+    // request that completes after this one was initiated is ignored.
+    const gen = ++hintGenerationRef.current;
     setIsFetchingHint(true); setHintText('');
     try {
       const msgs = messagesRef.current
@@ -538,6 +649,8 @@ function GameContent() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: msgs, scenario: scenarioId, lang }),
       });
+      // Only apply result if no newer request was made
+      if (hintGenerationRef.current !== gen) return;
       if (res.ok) {
         const data = await res.json();
         if (data.hint) {
@@ -553,11 +666,12 @@ function GameContent() {
           : '提示暂不可用。记住：温暖地推辞两次，第三次带着感激接受。');
       }
     } catch {
+      if (hintGenerationRef.current !== gen) return;
       setHintText(lang === 'en'
         ? 'Hint unavailable. As a rule of thumb: refuse twice warmly, then accept with gratitude on the third offer.'
         : '提示暂不可用。记住：温暖地推辞两次，第三次带着感激接受。');
     } finally {
-      setIsFetchingHint(false);
+      if (hintGenerationRef.current === gen) setIsFetchingHint(false);
     }
   };
 
@@ -979,6 +1093,34 @@ function GameContent() {
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        {multiTabWarning && (
+          <div className="flex justify-center mb-3">
+            <div className="max-w-[85%] px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+              <div className="flex items-center gap-2">
+                <span>⚠️</span>
+                <span className="font-medium">
+                  {lang === 'en'
+                    ? 'This game is open in another tab. Playing in multiple tabs may cause unexpected behavior.'
+                    : '此游戏已在另一个标签页中打开。在多个标签页中同时游戏可能会导致意外行为。'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+        {storageWarning && (
+          <div className="flex justify-center mb-3">
+            <div className="max-w-[85%] px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-700">
+              <div className="flex items-center gap-2">
+                <span>💾</span>
+                <span className="font-medium">
+                  {lang === 'en'
+                    ? 'Your browser does not support saving progress. Game progress will be lost when you close this page.'
+                    : '您的浏览器不支持保存进度。关闭页面后游戏进度将丢失。'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         {messages.map(m => {
           if (m.role === 'context') {
             return <ChatBubble key={m.id} content={m.content} isUser={false} isContext />;
@@ -1216,15 +1358,27 @@ function GameContent() {
 
       {/* Network error */}
       {streamError && !gameOver && (
-        <div className="bg-white border-t border-rose-200 p-4 pb-8">
+        <div className="bg-white border-t border-amber-200 p-4 pb-8">
           <div className="max-w-lg mx-auto text-center">
-            <p className="text-rose-500 text-sm mb-3">{t('common.networkError', lang)}</p>
-            <button
-              onClick={() => streamFetch(messagesRef.current, stageRef.current!, currentRoundRef.current)}
-              className="px-6 py-2.5 bg-rose-500 text-white rounded-xl font-medium hover:bg-rose-600 transition-colors text-sm"
-            >
-              {lang === 'en' ? 'Retry' : '重试'}
-            </button>
+            <p className="text-amber-600 text-sm mb-3">
+              {lang === 'en'
+                ? 'Auntie had a little trouble connecting just now, but she left you with a warm goodbye above. You can end the conversation or try reconnecting.'
+                : '阿姨刚才有点连不上，但她在上面留了温暖的告别。你可以结束对话或尝试重新连接。'}
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => streamFetch(messagesRef.current, stageRef.current!, currentRoundRef.current)}
+                className="px-6 py-2.5 bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 transition-colors text-sm"
+              >
+                {lang === 'en' ? 'Retry' : '重试'}
+              </button>
+              <button
+                onClick={handleEndConversation}
+                className="px-6 py-2.5 bg-stone-200 text-stone-700 rounded-xl font-medium hover:bg-stone-300 transition-colors text-sm"
+              >
+                {t('endConversation.button', lang)}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -323,19 +323,82 @@ export function t(
     if (value && typeof value === 'object' && k in value) {
       value = (value as Record<string, unknown>)[k];
     } else {
+      console.warn(`[i18n] Missing translation key: "${key}"`);
       return key;
     }
   }
-  if (value && typeof value === 'object' && lang in (value as Record<string, unknown>)) {
-    let text = (value as Record<string, string>)[lang];
-    if (replacements) {
-      for (const [placeholder, replacement] of Object.entries(replacements)) {
-        text = text.replace(`{${placeholder}}`, String(replacement));
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, string>;
+    // Try requested language first, fall back to English
+    let text = obj[lang] ?? obj['en'];
+    if (text) {
+      if (!obj[lang] && lang !== 'en') {
+        console.warn(`[i18n] Missing "${lang}" translation for key: "${key}", falling back to English`);
       }
+      if (replacements) {
+        for (const [placeholder, replacement] of Object.entries(replacements)) {
+          text = text.replace(`{${placeholder}}`, String(replacement));
+        }
+      }
+      return text;
     }
-    return text;
   }
+  console.warn(`[i18n] No translation found for key: "${key}"`);
   return key;
 }
 
 export const defaultLanguage: Language = 'en';
+
+/**
+ * Server-safe API error messages. Route handlers run outside React context,
+ * so they use these bilingual messages directly instead of the `t()` function.
+ */
+export const apiMessages: Record<string, { en: string; zh: string }> = {
+  apiKeyNotConfigured: {
+    en: 'API key not configured',
+    zh: 'API密钥未配置',
+  },
+  invalidJsonBody: {
+    en: 'Invalid JSON body',
+    zh: '无效的JSON请求体',
+  },
+  validationFailed: {
+    en: 'Validation failed',
+    zh: '请求验证失败',
+  },
+  tooManyRequests: {
+    en: 'Too many requests. Please slow down.',
+    zh: '请求过于频繁，请稍后再试。',
+  },
+  tooManyDebriefRequests: {
+    en: 'Too many debrief requests. Please wait.',
+    zh: '复盘请求过于频繁，请稍后再试。',
+  },
+  tooManyHintRequests: {
+    en: 'Too many hint requests. Please wait.',
+    zh: '提示请求过于频繁，请稍后再试。',
+  },
+  failedToReachApi: {
+    en: 'Failed to reach API',
+    zh: '无法连接到AI服务',
+  },
+  noResponseBody: {
+    en: 'No response body',
+    zh: 'AI服务未返回内容',
+  },
+  streamInterrupted: {
+    en: 'Stream interrupted',
+    zh: '响应流中断',
+  },
+  contentBlocked: {
+    en: 'Message contains content that cannot be processed.',
+    zh: '消息包含无法处理的内容。',
+  },
+};
+
+/** Get bilingual API error message. Falls back to English if key not found. */
+export function apiMsg(key: string, lang: string): string {
+  const entry = apiMessages[key];
+  if (!entry) return key;
+  return lang === 'zh' ? entry.zh : entry.en;
+}

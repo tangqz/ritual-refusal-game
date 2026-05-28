@@ -3,38 +3,92 @@ import { buildSystemPrompt } from '@/lib/prompts/prompt-builder';
 import {
   logChatRequest, logChatResponse, logChatError, rid,
 } from '@/lib/llm-logger';
+import { chatRequestSchema } from '@/lib/validation';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
+import { filterUserInput } from '@/lib/content-filter';
+import { apiMsg } from '@/lib/i18n';
+import { fetchWithRetry } from '@/lib/fetch-utils';
+
+const MAX_MESSAGES = 20;
+
+/** Trim conversation history to last N messages, injecting a summary prefix if truncated */
+function windowMessages(
+  messages: Array<{ role: string; content: string }>,
+  lang: string,
+): Array<{ role: string; content: string }> {
+  if (messages.length <= MAX_MESSAGES) return messages;
+
+  const truncated = messages.slice(messages.length - MAX_MESSAGES);
+  const summary = lang === 'en'
+    ? '(Earlier conversation summarized for brevity.)'
+    : '（先前的对话已为简洁起见进行了概括。）';
+
+  return [{ role: 'system' as const, content: summary }, ...truncated];
+}
 
 export async function POST(request: NextRequest) {
   const requestId = rid();
   const startTime = Date.now();
 
+  // Rate limiting: per-session (or fall back to IP)
+  const sessionId = request.headers.get('x-session-id') || request.headers.get('x-forwarded-for') || 'anonymous';
+  const { allowed, remaining } = checkRateLimit(`chat:${sessionId}`, RATE_LIMITS.chat);
+  if (!allowed) {
+    return new Response(JSON.stringify({ error: apiMsg('tooManyRequests', 'en') }), {
+      status: 429,
+      headers: {
+        'Content-Type': 'application/json',
+        'Retry-After': '60',
+        'X-RateLimit-Remaining': String(remaining),
+      },
+    });
+  }
+
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'API key not configured' }), {
+    return new Response(JSON.stringify({ error: apiMsg('apiKeyNotConfigured', 'en') }), {
       status: 500, headers: { 'Content-Type': 'application/json' },
     });
   }
 
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+    return new Response(JSON.stringify({ error: apiMsg('invalidJsonBody', 'en') }), {
       status: 400, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const { messages, scenario, stage, roundNumber, lang, sessionId } = body;
-  if (!scenario || !stage) {
-    return new Response(JSON.stringify({ error: 'Missing scenario/stage' }), {
+  // Zod validation
+  const parsed = chatRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return new Response(JSON.stringify({
+      error: apiMsg('validationFailed', 'en'),
+      details: parsed.error.flatten().fieldErrors,
+    }), {
       status: 400, headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const currentRound = (roundNumber as number) || 1;
-  const language = (lang as string) || 'en';
+  const { messages: rawMessages, scenario, stage, roundNumber, lang: langParam } = parsed.data;
+  const currentRound = roundNumber;
+  const language = langParam || 'en';
+
+  // Content moderation: check the last user message for harmful content
+  const lastUserMsg = [...rawMessages].reverse().find(m => m.role === 'user');
+  if (lastUserMsg) {
+    const filterResult = filterUserInput(lastUserMsg.content);
+    if (!filterResult.allowed) {
+      return new Response(JSON.stringify({ error: apiMsg('contentBlocked', language) }), {
+        status: 400, headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  }
+
+  // Window conversation to prevent token budget overruns
+  const windowedMessages = windowMessages(rawMessages, language);
 
   // Count refusals from user messages for pacing context
-  const userMessages = (messages as Array<{ role: string; content: string }>) || [];
-  const refusalCount = userMessages.filter(m => {
+  const refusalCount = windowedMessages.filter(m => {
     const t = m.content.toLowerCase();
     return m.role === 'user' && (
       t.includes("can't") || t.includes('cannot') || t.includes('no no') ||
@@ -45,18 +99,17 @@ export async function POST(request: NextRequest) {
   }).length;
 
   const systemPrompt = buildSystemPrompt(
-    scenario as string, stage as string, language as 'en' | 'zh',
+    scenario, stage, language,
     currentRound, refusalCount
   );
 
   const finalMessages = [
     { role: 'system', content: systemPrompt },
-    ...userMessages,
+    ...windowedMessages,
   ];
 
   logChatRequest(requestId, {
-    scenario: scenario as string,
-    stage: stage as string,
+    scenario, stage,
     roundNumber: currentRound,
     lang: language,
     refusalCount,
@@ -82,22 +135,25 @@ export async function POST(request: NextRequest) {
     dsBody.thinking = { type: 'disabled' };
   }
 
-  if (sessionId) dsBody.user_id = `cultural-compass-${sessionId}`;
+  if (parsed.data.sessionId) dsBody.user_id = `cultural-compass-${parsed.data.sessionId}`;
 
   // Longer timeout for guided mode (deep reasoning takes time)
   const fetchTimeout = stage === 'guided' ? 90000 : 30000;
 
   let dsResponse: Response;
   try {
-    dsResponse = await fetch('https://api.deepseek.com/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify(dsBody),
-      signal: AbortSignal.timeout(fetchTimeout),
-    });
+    dsResponse = await fetchWithRetry(
+      'https://api.deepseek.com/chat/completions',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify(dsBody),
+        signal: AbortSignal.timeout(fetchTimeout),
+      },
+    );
   } catch {
-    logChatError(requestId, { latencyMs: Date.now() - startTime, error: 'Failed to reach API' });
-    return new Response(JSON.stringify({ error: 'Failed to reach API' }), {
+    logChatError(requestId, { latencyMs: Date.now() - startTime, error: apiMsg('failedToReachApi', 'en') });
+    return new Response(JSON.stringify({ error: apiMsg('failedToReachApi', language) }), {
       status: 502, headers: { 'Content-Type': 'application/json' },
     });
   }
@@ -117,8 +173,8 @@ export async function POST(request: NextRequest) {
 
   const reader = dsResponse.body?.getReader();
   if (!reader) {
-    logChatError(requestId, { latencyMs: Date.now() - startTime, error: 'No response body' });
-    return new Response(JSON.stringify({ error: 'No response body' }), {
+    logChatError(requestId, { latencyMs: Date.now() - startTime, error: apiMsg('noResponseBody', 'en') });
+    return new Response(JSON.stringify({ error: apiMsg('noResponseBody', language) }), {
       status: 502, headers: { 'Content-Type': 'application/json' },
     });
   }
@@ -132,6 +188,13 @@ export async function POST(request: NextRequest) {
   const parsedTags: string[] = [];
   let rawText = '';
 
+  // Track client disconnect to abort upstream fetch
+  let clientDisconnected = false;
+  request.signal.addEventListener('abort', () => {
+    clientDisconnected = true;
+    reader.cancel().catch(() => {});
+  });
+
   const stream = new ReadableStream({
     async start(controller) {
       const decoder = new TextDecoder();
@@ -139,6 +202,7 @@ export async function POST(request: NextRequest) {
 
       try {
         while (true) {
+          if (clientDisconnected) break;
           const { done, value } = await reader.read();
           if (done) break;
 
@@ -219,11 +283,11 @@ export async function POST(request: NextRequest) {
         console.error('Stream error:', e);
         logChatError(requestId, {
           latencyMs: Date.now() - startTime,
-          error: 'Stream interrupted',
+          error: apiMsg('streamInterrupted', 'en'),
         });
         try {
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: 'error', error: 'Stream interrupted' })}\n\n`)
+            encoder.encode(`data: ${JSON.stringify({ type: 'error', error: apiMsg('streamInterrupted', language) })}\n\n`)
           );
         } catch {
           // Client already disconnected
