@@ -17,9 +17,9 @@ export interface AnnotationItem {
 }
 
 export async function POST(request: NextRequest) {
-  // Rate limiting
-  const sessionId = request.headers.get('x-session-id') || request.headers.get('x-forwarded-for') || 'anonymous';
-  const { allowed, remaining } = checkRateLimit(`debrief:${sessionId}`, RATE_LIMITS.debrief);
+  // Rate limiting: by IP (x-session-id is client-controlled and easily spoofed)
+  const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'anonymous';
+  const { allowed, remaining } = checkRateLimit(`debrief:${ip}`, RATE_LIMITS.debrief);
   if (!allowed) {
     return new Response(JSON.stringify({ error: apiMsg('tooManyDebriefRequests', 'en') }), {
       status: 429,
