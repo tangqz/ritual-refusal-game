@@ -41,6 +41,7 @@ export function ChatBubble({ content, isUser, avatar, isContext, wisdomIcon, onW
             onClick={onWisdomClick}
             className="absolute -right-2 -top-2 w-7 h-7 bg-amber-100 hover:bg-amber-200 rounded-full flex items-center justify-center text-sm shadow-sm transition-colors"
             title="Wisdom card"
+            aria-label="View wisdom card"
           >
             🦉
           </button>
