@@ -15,6 +15,9 @@ export const chatRequestSchema = z.object({
   roundNumber: z.number().int().min(1).max(100),
   lang: z.enum(['en', 'zh']),
   sessionId: z.string().max(100).optional(),
+  /** When true, the server appends a strong format reminder to the system prompt.
+   *  Used on retry when the previous attempt produced raw text without tags. */
+  retryHint: z.boolean().optional(),
 });
 
 export const debriefRequestSchema = z.object({

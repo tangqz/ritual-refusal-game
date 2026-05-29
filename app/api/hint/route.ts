@@ -104,7 +104,7 @@ Give ONE short, specific sentence (max 20 words). Be direct and practical — no
           temperature: 0.5,
           stream: false,
         }),
-        signal: AbortSignal.timeout(15000),
+        timeoutMs: 15000,
       },
     );
 

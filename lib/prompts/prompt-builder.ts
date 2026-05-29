@@ -83,7 +83,7 @@ function buildFormatInstructions(stage: LearningStage, lang: Language, round: nu
   } else {
     instructions += `\n\nThis is round ${round} — no <<CONTEXT>> needed.`;
     if (stage === 'guided') {
-      instructions += `\n\n⚠️ CRITICAL for round ${round}: FIRST, check the player's last message. If it starts with "[ACCEPT]", the player has achieved the cultural goal — skip to the CONVERSATION ENDING rules below IMMEDIATELY. Do NOT offer more options, do NOT have the NPC insist or push further.
+      instructions += `\n\n⚠️ CRITICAL for round ${round}: FIRST, check the player's last message. If it ends with "[ACCEPT]" or contains "[ACCEPT]", the player has achieved the cultural goal — skip to the CONVERSATION ENDING rules below IMMEDIATELY. Do NOT offer more options, do NOT have the NPC insist or push further.
 
 If the player's last message does NOT contain "[ACCEPT]" (they chose a non-acceptance option): You MUST start with <<FEEDBACK>> — a brief, 1-sentence feedback on their last choice. Then output <<NPC>> — the NPC's natural continuation (NOT the same line as before!). Then <<OPTIONS>>. Do NOT repeat the NPC's opening line. Advance the conversation naturally.
 
@@ -117,7 +117,7 @@ CRITICAL RULES:
     const targetMin = goal?.targetRoundRange?.min ?? 2;
     const targetMax = goal?.targetRoundRange?.max ?? 3;
 
-    instructions += `\n\nGuided mode. Each round: 1) The NPC speaks (<<NPC>>) — just their spoken dialogue with brief action notes. 2) Then offer four response options (<<OPTIONS>>) representing different cultural approaches, exactly one marked [ACCEPT]. Close <<NPC>> before opening <<OPTIONS>>.
+    instructions += `\n\nGuided mode. Each round: 1) The NPC speaks (<<NPC>>) — just their spoken dialogue with brief action notes. 2) Then offer four response options (<<OPTIONS>>) representing different cultural approaches, exactly one marked [ACCEPT] at the START of the option (before the text). Close <<NPC>> before opening <<OPTIONS>>.
 
 For regular rounds (player chose a non-[ACCEPT] option): You MUST include 1) <<FEEDBACK>> — brief, 1-sentence feedback, 2) <<NPC>> — the NPC's next dialogue, 3) <<OPTIONS>> — new set of choices. NEVER put option bullets inside <<NPC>>.
 
@@ -127,7 +127,7 @@ For regular rounds (player chose a non-[ACCEPT] option): You MUST include 1) <<F
 
 The cultural goal is: ${goalDesc}. The conversation should last ${targetMin}-${targetMax} rounds.
 
-When the player's last message starts with "[ACCEPT]", they have achieved the goal. You MUST end the conversation NOW:
+When the player's last message contains "[ACCEPT]", they have achieved the goal. You MUST end the conversation NOW:
 1. <<FEEDBACK>> — 1 sentence celebrating their cultural achievement
 2. <<NPC>> — The NPC's WARM CLOSING. This is CRITICAL: the NPC must NOT insist, push, plead, or try to give anything anymore. The NPC simply expresses joy and warmth. Examples: "(beams with happiness) Hǎo! Auntie is so happy! Happy New Year, my dear!" — or — "(pats your hand warmly) Good child. This makes Auntie's heart full."
 3. <<END>> on its own line.
@@ -149,15 +149,19 @@ When the player's last message starts with "[ACCEPT]", they have achieved the go
 
     instructions += `
 
-Practice mode. NPC speaks (<<NPC>>), then the player types freely — no options needed. Respond naturally to whatever they say.
+Practice mode. You MUST wrap your NPC dialogue in <<NPC>> ... <</NPC>> tags. The player types freely — no options needed. Respond naturally to whatever they say.
+
+🔴 FORMAT: Every response MUST use tags. Even if you only output one section, the <<TAG>> and <</TAG>> wrappers are REQUIRED. NEVER output raw text without tag wrappers.
 
 The cultural goal is: ${goalDesc}.
 
-EVERY ROUND (including the first response after NPC speaks):
+${round === 1 ? `This is round 1 — the player hasn't said anything yet. Just output <<NPC>> with the NPC's opening dialogue. No <<FEEDBACK>> needed in round 1 since there's nothing to give feedback on yet.
+
+FORMAT for round 1: <<NPC>> then NPC dialogue, then <</NPC>>. That's it.` : `EVERY ROUND (starting from round 2):
 1. Always start with <<FEEDBACK>> — a brief, 1-sentence feedback. Note what the player did well in cultural terms, very concisely.
 2. Then <<NPC>> — the NPC's next natural conversational turn.
 
-This means cultural insight appears throughout the conversation, not just at the end. Each player response is a teachable moment.
+This means cultural insight appears throughout the conversation, not just at the end. Each player response is a teachable moment.`}
 
 CONVERSATION ENDING — GOAL DETECTION:
 After the player sends a message, read it carefully. If the player achieves the cultural goal (${acceptHints}), you MUST:
@@ -180,11 +184,13 @@ Key: the conversation SHOULD end when the goal is achieved. Don't drag it out.`;
 
     instructions += `
 
-Challenge mode. <<NPC>> only — no <<OPTIONS>>. The player types freely. No hints, no guidance.
+Challenge mode. You MUST wrap your NPC dialogue in <<NPC>> ... <</NPC>> tags — no other sections needed during regular rounds. The player types freely. No hints, no guidance.
+
+🔴 FORMAT: Every response MUST start with <<NPC>> on its own line, followed by the NPC's spoken dialogue, then <</NPC>> on its own line. Even if you only output one section, the <<NPC>> and <</NPC>> tags are REQUIRED. NEVER output raw dialogue text without the tag wrappers.
 
 The cultural goal is: ${goalDesc}.
 
-⚠️ NO <<FEEDBACK>> DURING THE CONVERSATION. This is challenge mode — the player must navigate without any cultural coaching. Do NOT output <<FEEDBACK>> during regular back-and-forth rounds. Only output <<NPC>> in each round.
+⚠️ NO <<FEEDBACK>> DURING THE CONVERSATION. This is challenge mode — the player must navigate without any cultural coaching. Do NOT output <<FEEDBACK>> during regular back-and-forth rounds. Only output <<NPC>> ... <</NPC>> in each round.
 
 Save <<PSYCHOLOGY>> and <<WISDOM>> for the very end.
 

@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const { messages: rawMessages, scenario, stage, roundNumber, lang: langParam } = parsed.data;
+  const { messages: rawMessages, scenario, stage, roundNumber, lang: langParam, retryHint } = parsed.data;
   const currentRound = roundNumber;
   const language = langParam || 'en';
 
@@ -103,8 +103,33 @@ export async function POST(request: NextRequest) {
     currentRound, refusalCount
   );
 
+  // On retry from client (previous attempt had no tags), inject a strong
+  // format reminder at the very top of the system prompt so the LLM sees it first.
+  // The reminder is stage-specific so it doesn't contradict the format instructions.
+  const retryReminder = retryHint
+    ? (() => {
+        const base = language === 'en'
+          ? '⚠️ CRITICAL: Your previous response was IGNORED because you forgot to use <<TAG>> wrappers. '
+          : '⚠️ 严重警告：你上次的回复被忽略了，因为你忘了使用<<TAG>>标签。 ';
+        if (stage === 'guided') {
+          return base + (language === 'en'
+            ? 'EVERY section MUST be wrapped in tags. Format: <<FEEDBACK>>feedback<</FEEDBACK>> then <<NPC>>dialogue<</NPC>> then <<OPTIONS>> with 4 bullets<</OPTIONS>>. Start with <<FEEDBACK>> NOW.\n\n'
+            : '每个部分都必须用标签包裹。格式：<<FEEDBACK>>反馈<</FEEDBACK>> 然后 <<NPC>>对话<</NPC>> 然后 <<OPTIONS>>四个选项<</OPTIONS>>。现在以<<FEEDBACK>>开头。\n\n');
+        }
+        if (stage === 'practice') {
+          return base + (language === 'en'
+            ? 'Wrap your response: <<FEEDBACK>>brief feedback<</FEEDBACK>> then <<NPC>>dialogue<</NPC>>. Start with <<FEEDBACK>> NOW.\n\n'
+            : '用标签包裹你的回复：<<FEEDBACK>>简短反馈<</FEEDBACK>> 然后 <<NPC>>对话<</NPC>>。现在以<<FEEDBACK>>开头。\n\n');
+        }
+        // challenge mode: just <<NPC>>
+        return base + (language === 'en'
+          ? 'EVERY section MUST be wrapped. Format: <<NPC>>dialogue<</NPC>>. Start with <<NPC>> on its own line NOW.\n\n'
+          : '每个部分都必须用标签包裹。格式：<<NPC>>对话<</NPC>>。现在在单独一行以<<NPC>>开头。\n\n');
+      })()
+    : '';
+
   const finalMessages = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: retryReminder + systemPrompt },
     ...windowedMessages,
   ];
 
@@ -148,7 +173,7 @@ export async function POST(request: NextRequest) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify(dsBody),
-        signal: AbortSignal.timeout(fetchTimeout),
+        timeoutMs: fetchTimeout,
       },
     );
   } catch {

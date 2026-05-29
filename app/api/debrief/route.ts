@@ -201,7 +201,7 @@ IMPROVE|1|原句片段|试试换成"……"因为……`;
           max_tokens: 8000,
           stream: true,
         }),
-        signal: AbortSignal.timeout(50000),
+        timeoutMs: 50000,
       },
     );
 

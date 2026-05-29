@@ -17,11 +17,15 @@
 /.next/
 /out/
 
+# turbopack
+/.turbo/
+
 # production
 /build
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
 
 # debug
@@ -29,9 +33,13 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
+llm-logs/
 
-# env files (can opt-in for committing if needed)
+# env files
 .env*
+!.env.example
+!.env.test
 
 # vercel
 .vercel
@@ -39,5 +47,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-.claude/settings.json
-.claude/skills/review-game/SKILL.md
+
+# IDE / editors
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Claude / AI assistant generated files
+.claude/*
+
+# Vite
+vite.config.ts.timestamp-*
