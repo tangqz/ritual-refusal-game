@@ -1,0 +1,4 @@
+## 2024-05-24 - [CRITICAL] Fix Rate Limit Bypass via x-session-id Spoofing
+**Vulnerability:** The application was using a client-controlled `x-session-id` header as the primary key for rate limiting API endpoints (`/api/chat`, `/api/fim-complete`, `/api/hint`, `/api/debrief`).
+**Learning:** Because `x-session-id` is generated client-side (e.g., using `crypto.randomUUID()` in `localStorage`), an attacker can easily bypass the rate limit by rotating the session ID on every request. This exposes the system to Denial of Service (DoS) attacks and significant cost overruns from unbounded upstream API calls.
+**Prevention:** Always use a server-determined identifier, primarily the client's IP address (`request.ip` or `x-forwarded-for` from trusted proxies), as the basis for rate limiting to prevent client-side circumvention.

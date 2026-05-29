@@ -45,6 +45,13 @@ describe("POST /api/hint", () => {
 
   it("returns 429 when rate limited", async () => {
     process.env.DEEPSEEK_API_KEY = "test-key";
+
+    // We mock the fetch so it doesn't try to call DeepSeek API and timeout
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "hint" } }] }),
+    }));
+
     // Hit the rate limit by making many requests with the same IP
     const req = new Request("http://localhost:3000/api/hint", {
       method: "POST",
@@ -63,6 +70,8 @@ describe("POST /api/hint", () => {
     }
     const res = await POST(req as any);
     expect(res.status).toBe(429);
+
+    vi.unstubAllGlobals();
   });
 });
 

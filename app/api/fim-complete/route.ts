@@ -8,9 +8,9 @@ export async function POST(request: NextRequest) {
   const requestId = rid();
   const startTime = Date.now();
 
-  // Rate limiting
-  const sessionId = request.headers.get('x-session-id') || request.headers.get('x-forwarded-for') || 'anonymous';
-  const { allowed, remaining } = checkRateLimit(`fim:${sessionId}`, RATE_LIMITS.fim);
+  // Rate limiting: by IP (x-session-id is client-controlled and easily spoofed)
+  const ip = request.ip || request.headers.get('x-forwarded-for') || 'anonymous';
+  const { allowed, remaining } = checkRateLimit(`fim:${ip}`, RATE_LIMITS.fim);
   if (!allowed) {
     return new Response(JSON.stringify({ error: apiMsg('tooManyRequests', 'en') }), {
       status: 429,
