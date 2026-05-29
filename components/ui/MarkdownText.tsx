@@ -1,8 +1,13 @@
 'use client';
-import React from 'react';
+import React, { memo } from 'react';
 
-/** Render basic markdown: **bold**, *italic*, --- (hr), line breaks */
-export function MarkdownText({ text }: { text: string }) {
+/**
+ * Render basic markdown: **bold**, *italic*, --- (hr), line breaks
+ * ⚡ Bolt Optimization: Wrapped in React.memo to prevent expensive RegExp
+ *    parsing and DOM diffing for completed messages during LLM text streaming.
+ *    Impact: Prevents O(N) re-renders of the entire message history per token.
+ */
+export const MarkdownText = memo(function MarkdownText({ text }: { text: string }) {
   if (!text) return null;
 
   // Split by --- for horizontal rules
@@ -18,7 +23,7 @@ export function MarkdownText({ text }: { text: string }) {
       ))}
     </>
   );
-}
+});
 
 function renderInline(text: string) {
   // Process **bold** and *italic*
