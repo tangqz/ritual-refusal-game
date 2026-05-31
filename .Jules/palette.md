@@ -1,1 +1,4 @@
 ## 2025-05-29 - Added ARIA Label to Wisdom Icon\n**Learning:** The ChatBubble component uses icon-only buttons for interactive elements (like the wisdom card popup) that lack screen reader context.\n**Action:** Ensure all interactive elements relying on emojis or icons have a descriptive aria-label.
+## 2024-05-31 - [Language Toggle Accessibility]
+**Learning:** Icon-only or state-indicating toggle buttons (like a language switch that displays "中文" when in English mode to imply switching to Chinese) lack semantic clarity for screen readers about the *action* occurring, as the visible text represents the *target* state rather than the action itself.
+**Action:** Always provide explicit `aria-label`s on state-toggling buttons that dynamically explain the resulting action (e.g., "Switch to Chinese" rather than just displaying "中文"), and accompany them with clear `focus-visible` states (`focus-visible:ring-2 focus-visible:outline-none`) to ensure keyboard navigability.
