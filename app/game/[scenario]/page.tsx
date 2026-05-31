@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ChatBubble } from '@/components/ui/ChatBubble';
 import { ChoiceButton } from '@/components/ui/ChoiceButton';
@@ -182,17 +182,19 @@ function GameContent() {
   const isChallenge = stage === 'challenge';
 
   // Build FIM prompt context for practice mode
-  const getFimPrompt = (): string => {
+  // ⚡ Bolt Optimization: Memoize the prompt generation based on `messages` state
+  // to avoid recalculating string `.join()`s on every single token streamed during live text render.
+  const fimPrompt = useMemo((): string => {
     const scenarioTitle = lang === 'en' ? scenario?.titleEn : scenario?.titleZh;
     const scenarioSetting = lang === 'en' ? scenario?.settingEn : scenario?.settingZh;
     const npcRole = lang === 'en' ? scenario?.npcRoleEn : scenario?.npcRoleZh;
     // Last few messages as context
-    const recentMsgs = messagesRef.current.slice(-6).map(m => {
+    const recentMsgs = messages.slice(-6).map(m => {
       const role = m.role === 'assistant' ? npcRole : (m.role === 'user' ? 'You' : '');
       return role ? `${role}: ${m.content}` : '';
     }).filter(Boolean).join('\n');
     return `[Scene: ${scenarioSetting}]\n[Your role: A Chinese adoptee learning social norms]\n[NPC: ${npcRole}]\n\n${recentMsgs}\nYou:`;
-  };
+  }, [messages, lang, scenario]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, options, observeWaiting, liveNpc, livePlayer]);
 
@@ -1117,7 +1119,7 @@ function GameContent() {
       <DebriefPanel
         scenarioId={scenarioId} stage={nextSt!} roundsPlayed={currentRound}
         insightsCollected={collectedInsights} earnedTitle={earnedTitle}
-        messages={messagesRef.current}
+        messages={messages}
         debriefTitle={debriefTitle}
         debriefSummary={debriefSummary}
         annotations={debriefAnnotations}
@@ -1316,7 +1318,7 @@ function GameContent() {
               placeholder={lang === 'en' ? 'Type your response...' : '输入你的回应...'}
               disabled={isLoading}
               onSubmit={handlePracticeSubmit}
-              fimPrompt={getFimPrompt()}
+              fimPrompt={fimPrompt}
               lang={lang}
             />
           </div>
