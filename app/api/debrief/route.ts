@@ -207,7 +207,8 @@ IMPROVE|1|原句片段|试试换成"……"因为……`;
 
     if (!dsResponse.ok) {
       const errText = await dsResponse.text();
-      return new Response(JSON.stringify({ error: `API ${dsResponse.status}`, details: errText }), {
+      console.error(`Debrief API Error ${dsResponse.status}: ${errText}`);
+      return new Response(JSON.stringify({ error: `API ${dsResponse.status}` }), {
         status: 502, headers: { 'Content-Type': 'application/json' },
       });
     }

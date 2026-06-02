@@ -110,7 +110,8 @@ Give ONE short, specific sentence (max 20 words). Be direct and practical — no
 
     if (!dsResponse.ok) {
       const latency = Date.now() - startTime;
-      logHintError(requestId, { latencyMs: latency, error: `API ${dsResponse.status}`, status: dsResponse.status });
+      const errText = await dsResponse.text();
+      logHintError(requestId, { latencyMs: latency, error: `API ${dsResponse.status}: ${errText}`, status: dsResponse.status });
       return new Response(JSON.stringify({ error: `API ${dsResponse.status}` }), {
         status: 502, headers: { 'Content-Type': 'application/json' },
       });

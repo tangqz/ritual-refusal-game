@@ -83,10 +83,10 @@ export async function POST(request: NextRequest) {
     const errText = await dsResponse.text();
     logFimError(requestId, {
       latencyMs: Date.now() - startTime,
-      error: `FIM API ${dsResponse.status}`,
+      error: `FIM API ${dsResponse.status}: ${errText}`,
       status: dsResponse.status,
     });
-    return new Response(JSON.stringify({ error: `FIM API ${dsResponse.status}`, details: errText }), {
+    return new Response(JSON.stringify({ error: `FIM API ${dsResponse.status}` }), {
       status: dsResponse.status < 500 && dsResponse.status !== 429 ? dsResponse.status : 502,
       headers: { 'Content-Type': 'application/json' },
     });
