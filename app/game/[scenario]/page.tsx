@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, Suspense, useMemo } from 'react';
+import { useState, useEffect, useRef, Suspense, useMemo, useCallback} from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ChatBubble } from '@/components/ui/ChatBubble';
 import { ChoiceButton } from '@/components/ui/ChoiceButton';
@@ -973,26 +973,26 @@ function GameContent() {
 
   // ─── UI helpers ────────────────────────────────────────────────────
 
-  const togglePsychology = (msgId: string) => {
+  const togglePsychology = useCallback((msgId: string) => {
     setExpandedNotes(prev => {
       const next = new Set(prev);
       if (next.has(msgId)) next.delete(msgId); else next.add(msgId);
       return next;
     });
-  };
+  }, []);
 
-  const toggleCultural = (msgId: string) => {
+  const toggleCultural = useCallback((msgId: string) => {
     setExpandedCultural(prev => {
       const next = new Set(prev);
       if (next.has(msgId)) next.delete(msgId); else next.add(msgId);
       return next;
     });
-  };
+  }, []);
 
   // Wisdom popup
-  const showWisdomPopup = (card: AuntieWisdom) => {
+  const showWisdomPopup = useCallback((card: AuntieWisdom) => {
     setPendingWisdom(card);
-  };
+  }, []);
 
   const handleCollectWisdom = () => {
     if (!pendingWisdom) return;

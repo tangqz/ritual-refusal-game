@@ -30,7 +30,7 @@ export function StageSelector({ completedStages, onSelect, lang }: StageSelector
           <button
             key={stage}
             onClick={() => onSelect(stage)}
-            className={`w-full text-left p-4 rounded-xl border transition-all hover:shadow-sm ${
+            className={`w-full text-left p-4 rounded-xl border transition-all hover:shadow-sm focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none ${
               isCompleted
                 ? 'bg-emerald-50 border-emerald-200'
                 : 'bg-white border-stone-200 hover:border-stone-300'
