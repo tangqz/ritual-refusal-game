@@ -280,13 +280,13 @@ export function DebriefPanel({ scenarioId, stage, roundsPlayed, insightsCollecte
               <p className="text-sm font-medium text-emerald-800">{nextStageMeta.icon} {lang === 'en' ? nextStageMeta.labelEn : nextStageMeta.labelZh}</p>
             </div>
           )}
-          <button onClick={onNextStage} className="w-full py-3 bg-stone-800 text-white rounded-xl font-medium hover:bg-stone-700 transition-colors">
+          <button onClick={onNextStage} className="w-full py-3 bg-stone-800 text-white rounded-xl font-medium hover:bg-stone-700 transition-colors focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none">
             {nextStageMeta
               ? (lang === 'en' ? `Try ${nextStageMeta.labelEn} →` : `尝试${nextStageMeta.labelZh} →`)
               : (lang === 'en' ? 'Replay Stage' : '重玩本阶段')}
           </button>
-          <button onClick={() => router.push('/game')} className="w-full py-2.5 text-stone-400 hover:text-stone-600 text-sm transition-colors">{t('debrief.backToJourney', lang)}</button>
-          <button onClick={onReplay} className="w-full py-2 text-stone-300 hover:text-stone-500 text-xs transition-colors">{t('debrief.replay', lang)}</button>
+          <button onClick={() => router.push('/game')} className="w-full py-2.5 text-stone-400 hover:text-stone-600 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none rounded-lg">{t('debrief.backToJourney', lang)}</button>
+          <button onClick={onReplay} className="w-full py-2 text-stone-300 hover:text-stone-500 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none rounded-lg">{t('debrief.replay', lang)}</button>
         </div>
       </div>
     </div>
