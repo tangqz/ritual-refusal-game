@@ -1,0 +1,10 @@
+<<<<<<< SEARCH
+const MemoizedMessageItem = memo(function MessageItem({
+  message,
+=======
+// ⚡ Bolt Optimization: Memoized message item to prevent O(N) re-renders
+// of the entire chat history during high-frequency LLM streaming updates.
+// We pass stable callbacks and primitive boolean flags instead of inline closures.
+const MemoizedMessageItem = memo(function MessageItem({
+  message,
+>>>>>>> REPLACE
