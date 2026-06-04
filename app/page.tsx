@@ -43,7 +43,7 @@ function HomeContent() {
           <button
             onClick={() => setShowIntro(true)}
             className="w-full py-3.5 bg-stone-800 text-white rounded-xl font-medium
-              hover:bg-stone-700 active:bg-stone-900 transition-colors"
+              hover:bg-stone-700 active:bg-stone-900 transition-colors focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
           >
             {hasExistingProgress
               ? t('home.continueJourney', lang)
@@ -53,7 +53,7 @@ function HomeContent() {
           {hasExistingProgress && (
             <button
               onClick={() => router.push('/game')}
-              className="w-full py-3 text-stone-400 hover:text-stone-600 text-sm transition-colors"
+              className="w-full py-3 text-stone-400 hover:text-stone-600 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none rounded-lg"
             >
               {lang === 'en' ? 'Skip to Journey Map' : '直接进入旅程地图'}
             </button>
