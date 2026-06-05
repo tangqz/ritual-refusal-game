@@ -18,7 +18,9 @@ export interface AnnotationItem {
 
 export async function POST(request: NextRequest) {
   // Rate limiting: by IP (x-session-id is client-controlled and easily spoofed)
-  const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'anonymous';
+  // SECURITY FIX: Prioritize `request.ip` over client-controlled headers like `x-forwarded-for`
+  // to prevent Rate Limit Bypass via header spoofing.
+  const ip = request.ip ?? request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'anonymous';
   const { allowed, remaining } = checkRateLimit(`debrief:${ip}`, RATE_LIMITS.debrief);
   if (!allowed) {
     return new Response(JSON.stringify({ error: apiMsg('tooManyDebriefRequests', 'en') }), {

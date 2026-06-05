@@ -11,7 +11,9 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   // Rate limiting: by IP (x-session-id is client-controlled and easily spoofed)
-  const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'anonymous';
+  // SECURITY FIX: Prioritize `request.ip` over client-controlled headers like `x-forwarded-for`
+  // to prevent Rate Limit Bypass via header spoofing.
+  const ip = request.ip ?? request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'anonymous';
   const { allowed, remaining } = checkRateLimit(`hint:${ip}`, RATE_LIMITS.hint);
   if (!allowed) {
     return new Response(JSON.stringify({ error: apiMsg('tooManyHintRequests', 'en') }), {
