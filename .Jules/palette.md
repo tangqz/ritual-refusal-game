@@ -2,3 +2,6 @@
 ## 2026-05-30 - Added Keyboard Focus Ring Styles
 **Learning:** Several interactive button components across the application (like LanguageToggle, JourneyMap cards, ChoiceButton) were lacking explicit focus visible styles, making keyboard navigation difficult.
 **Action:** When adding new interactive elements like buttons, always include focus-visible utility classes (e.g. `focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none`) to ensure accessibility for keyboard users.
+## 2026-06-05 - Added ARIA expanded property to collapsible Psychology Note
+**Learning:** Collapsible/expandable elements like the `PsychologyNote` component lacked `aria-expanded` properties and clear `focus-visible` styling, making it harder for screen readers and keyboard users to determine and interact with the state of the component.
+**Action:** When creating or modifying collapsible sections, always ensure `aria-expanded` is bound to the component state and include proper `focus-visible` classes (like `focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none`) for keyboard users.

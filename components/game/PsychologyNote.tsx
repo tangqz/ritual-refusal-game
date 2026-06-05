@@ -25,7 +25,8 @@ export function PsychologyNote({
     <div className="mt-1">
       <button
         onClick={onToggle}
-        className={`text-xs flex items-center gap-1 transition-colors ${
+        aria-expanded={isExpanded}
+        className={`text-xs flex items-center gap-1 transition-colors focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none rounded-sm ${
           isExpanded
             ? 'text-stone-500 hover:text-stone-700'
             : 'text-stone-400 hover:text-stone-600'
