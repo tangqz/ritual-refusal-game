@@ -116,6 +116,118 @@ function getFallbackNpcClosing(scenarioId: string, lang: Language): string {
   return lang === 'en' ? c.en : c.zh;
 }
 
+const MemoizedMessageItem = memo(function MemoizedMessageItem({
+  m,
+  scenarioAvatar,
+  isObserve,
+  isPsychologyExpanded,
+  isCulturalExpanded,
+  onTogglePsychology,
+  onToggleCultural,
+  onShowWisdomPopup,
+  lang,
+}: {
+  m: Message;
+  scenarioAvatar: string | undefined;
+  isObserve: boolean;
+  isPsychologyExpanded: boolean;
+  isCulturalExpanded: boolean;
+  onTogglePsychology: (id: string) => void;
+  onToggleCultural: (id: string) => void;
+  onShowWisdomPopup: (card: AuntieWisdom) => void;
+  lang: Language;
+}) {
+  if (m.role === 'context') {
+    return <ChatBubble content={m.content} isUser={false} isContext />;
+  }
+  if (m.role === 'feedback') {
+    return (
+      <div className="flex justify-center mb-3">
+        <div className="max-w-[85%] px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-stone-600 leading-relaxed">
+          <div className="flex items-center gap-2 mb-1">
+            <span>🦉</span>
+            <span className="text-xs font-medium text-amber-700 uppercase tracking-wide">
+              {lang === 'en' ? 'Feedback' : '反馈'}
+            </span>
+          </div>
+          {m.content}
+        </div>
+      </div>
+    );
+  }
+
+  const handleWisdomClick = useCallback(() => {
+    if (m.wisdomCard) onShowWisdomPopup(m.wisdomCard);
+  }, [m.wisdomCard, onShowWisdomPopup]);
+
+  const handleTogglePsychology = useCallback(() => {
+    onTogglePsychology(m.id);
+  }, [m.id, onTogglePsychology]);
+
+  const handleToggleCultural = useCallback(() => {
+    onToggleCultural(m.id);
+  }, [m.id, onToggleCultural]);
+
+  return (
+    <ChatBubble
+      content={m.content}
+      isUser={m.role === 'user'}
+      avatar={m.role === 'assistant' ? scenarioAvatar : undefined}
+      wisdomIcon={m.wisdomCard ? '🦉' : undefined}
+      onWisdomClick={m.wisdomCard ? handleWisdomClick : undefined}
+    >
+      {isObserve && m.role === 'assistant' && (m.npcThoughts || m.psychologyNote) && (
+        <PsychologyNote
+          text={m.npcThoughts || m.psychologyNote || ''}
+          isExpanded={isPsychologyExpanded}
+          onToggle={handleTogglePsychology}
+          labelEn="What was she thinking?"
+          labelZh="她当时在想什么？"
+          hideEn="Hide"
+          hideZh="收起"
+          lang={lang}
+        />
+      )}
+      {isObserve && m.role === 'assistant' && m.culturalSubtext && (
+        <div className="mt-1">
+          <button
+            onClick={handleToggleCultural}
+            className={`text-xs flex items-center gap-1 transition-colors ${
+              isCulturalExpanded
+                ? 'text-amber-600 hover:text-amber-700'
+                : 'text-amber-500 hover:text-amber-600'
+            }`}
+          >
+            <span>{isCulturalExpanded ? '📖' : '📕'}</span>
+            <span>
+              {isCulturalExpanded
+                ? (lang === 'en' ? 'Hide subtext' : '收起潜台词')
+                : (lang === 'en' ? 'Cultural subtext' : '文化潜台词')}
+            </span>
+          </button>
+          {isCulturalExpanded && (
+            <div className="mt-2 pl-4 border-l-2 border-amber-300 text-sm text-amber-800 leading-relaxed whitespace-pre-wrap">
+              {m.culturalSubtext}
+            </div>
+          )}
+        </div>
+      )}
+      {isObserve && m.role === 'user' && (m.playerThoughts || m.psychologyNote) && (
+        <PsychologyNote
+          text={m.playerThoughts || m.psychologyNote || ''}
+          isExpanded={isPsychologyExpanded}
+          onToggle={handleTogglePsychology}
+          labelEn="What were you thinking?"
+          labelZh="你当时在想什么？"
+          hideEn="Hide"
+          hideZh="收起"
+          lang={lang}
+        />
+      )}
+    </ChatBubble>
+  );
+});
+
 function GameContent() {
   const params = useParams(); const router = useRouter();
   const scenarioId = params.scenario as string;
@@ -1180,86 +1292,20 @@ function GameContent() {
             </div>
           </div>
         )}
-        {messages.map(m => {
-          if (m.role === 'context') {
-            return <ChatBubble key={m.id} content={m.content} isUser={false} isContext />;
-          }
-          if (m.role === 'feedback') {
-            return (
-              <div key={m.id} className="flex justify-center mb-3">
-                <div className="max-w-[85%] px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-stone-600 leading-relaxed">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span>🦉</span>
-                    <span className="text-xs font-medium text-amber-700 uppercase tracking-wide">
-                      {lang === 'en' ? 'Feedback' : '反馈'}
-                    </span>
-                  </div>
-                  {m.content}
-                </div>
-              </div>
-            );
-          }
-          return (
-            <ChatBubble
-              key={m.id}
-              content={m.content}
-              isUser={m.role === 'user'}
-              avatar={m.role === 'assistant' ? scenario.npcAvatar : undefined}
-              wisdomIcon={m.wisdomCard ? '🦉' : undefined}
-              onWisdomClick={m.wisdomCard ? () => showWisdomPopup(m.wisdomCard!) : undefined}
-            >
-              {/* Observe mode: per-role thoughts + cultural subtext */}
-              {isObserve && m.role === 'assistant' && (m.npcThoughts || m.psychologyNote) && (
-                <PsychologyNote
-                  text={m.npcThoughts || m.psychologyNote || ''}
-                  isExpanded={expandedNotes.has(m.id)}
-                  onToggle={() => togglePsychology(m.id)}
-                  labelEn="What was she thinking?"
-                  labelZh="她当时在想什么？"
-                  hideEn="Hide"
-                  hideZh="收起"
-                  lang={lang}
-                />
-              )}
-              {isObserve && m.role === 'assistant' && m.culturalSubtext && (
-                <div className="mt-1">
-                  <button
-                    onClick={() => toggleCultural(m.id)}
-                    className={`text-xs flex items-center gap-1 transition-colors ${
-                      expandedCultural.has(m.id)
-                        ? 'text-amber-600 hover:text-amber-700'
-                        : 'text-amber-500 hover:text-amber-600'
-                    }`}
-                  >
-                    <span>{expandedCultural.has(m.id) ? '📖' : '📕'}</span>
-                    <span>
-                      {expandedCultural.has(m.id)
-                        ? (lang === 'en' ? 'Hide subtext' : '收起潜台词')
-                        : (lang === 'en' ? 'Cultural subtext' : '文化潜台词')}
-                    </span>
-                  </button>
-                  {expandedCultural.has(m.id) && (
-                    <div className="mt-2 pl-4 border-l-2 border-amber-300 text-sm text-amber-800 leading-relaxed whitespace-pre-wrap">
-                      {m.culturalSubtext}
-                    </div>
-                  )}
-                </div>
-              )}
-              {isObserve && m.role === 'user' && (m.playerThoughts || m.psychologyNote) && (
-                <PsychologyNote
-                  text={m.playerThoughts || m.psychologyNote || ''}
-                  isExpanded={expandedNotes.has(m.id)}
-                  onToggle={() => togglePsychology(m.id)}
-                  labelEn="What were you thinking?"
-                  labelZh="你当时在想什么？"
-                  hideEn="Hide"
-                  hideZh="收起"
-                  lang={lang}
-                />
-              )}
-            </ChatBubble>
-          );
-        })}
+        {messages.map(m => (
+          <MemoizedMessageItem
+            key={m.id}
+            m={m}
+            scenarioAvatar={scenario.npcAvatar}
+            isObserve={isObserve}
+            isPsychologyExpanded={expandedNotes.has(m.id)}
+            isCulturalExpanded={expandedCultural.has(m.id)}
+            onTogglePsychology={togglePsychology}
+            onToggleCultural={toggleCultural}
+            onShowWisdomPopup={showWisdomPopup}
+            lang={lang}
+          />
+        ))}
 
         {/* Live streaming display */}
         {isThinking && (
