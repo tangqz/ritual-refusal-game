@@ -13,7 +13,14 @@ export function ProgressBar({ value, max = 100, label, color, icon }: ProgressBa
   const barColor = color ?? 'bg-stone-400';
 
   return (
-    <div className="w-full">
+    <div
+      className="w-full"
+      role="progressbar"
+      aria-valuenow={Math.round(value)}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      aria-label={label}
+    >
       <div className="flex items-center justify-between mb-1">
         <span className="text-[10px] text-stone-400 flex items-center gap-1">{icon && <span>{icon}</span>}{label}</span>
         <span className="text-[10px] text-stone-300 font-mono">{Math.round(value)}</span>

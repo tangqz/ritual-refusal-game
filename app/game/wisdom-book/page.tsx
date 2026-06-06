@@ -2,6 +2,7 @@
 import { useState, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { LanguageToggle } from '@/components/ui/LanguageToggle';
+import { ProgressBar } from '@/components/ui/ProgressBar';
 import type { Language } from '@/lib/i18n';
 import { t } from '@/lib/i18n';
 import { getAllCollectedInsightIds } from '@/lib/game-progress-store';
@@ -25,9 +26,13 @@ function WisdomBookContent() {
         <div className="text-center mb-8">
           <span className="text-5xl block mb-3">📖</span>
           <h1 className="text-2xl font-bold text-stone-900">{t('wisdom.collectionTitle', lang)}</h1>
-          <p className="text-stone-400 text-sm mt-2">{collected.length} {t('wisdom.of', lang)} {TOTAL_INSIGHTS} {lang === 'en' ? 'collected' : '已收集'}</p>
-          <div className="mt-3 h-1.5 bg-stone-200 rounded-full overflow-hidden max-w-xs mx-auto">
-            <div className="h-full bg-gradient-to-r from-amber-400 to-amber-500 rounded-full transition-all duration-500" style={{ width: `${(collected.length / TOTAL_INSIGHTS) * 100}%` }} />
+          <div className="max-w-xs mx-auto mt-4 text-left">
+            <ProgressBar
+              value={collected.length}
+              max={TOTAL_INSIGHTS}
+              label={`${t('wisdom.of', lang)} ${TOTAL_INSIGHTS} ${lang === 'en' ? 'collected' : '已收集'}`}
+              color="bg-gradient-to-r from-amber-400 to-amber-500"
+            />
           </div>
         </div>
 
