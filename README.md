@@ -44,6 +44,29 @@ After each stage, you receive a **personalized debrief** with a custom title, su
 | The Office Favor | Advanced | Bill + Gift |
 | Graceful Refusal | Advanced | Office + Dinner |
 
+## Design Roadmap / TODO
+
+- [ ] **Scenario → Learning Objective Mapping** — Map each scenario to explicit learning goals.  
+  *e.g. "Red Envelope = ritual refusal timing + face-giving", "Graceful Refusal = boundary + face-saving refusal".*
+
+- [ ] **Mastery-Based Wisdom Cards** — Redesign wisdom cards as mastery-based rewards: players earn cards by triggering/understanding a cultural concept, not merely by completing a scenario.
+
+- [ ] **Transparent Feedback Rubric** — Display per-round feedback across 5 dimensions: **warmth**, **clarity**, **face-saving**, **boundary**, **timing**. Let players see *why* a response was (or wasn't) culturally appropriate.
+
+- [ ] **No Public Leaderboard** — Replace any competitive ranking with personal progress tracking: **self-improvement**, **scenario completion**, **reflection depth**.
+
+- [ ] **Maintain Flow (Scaffolded Difficulty)** — Preserve the 4-stage progression (**Observe → Guided → Practice → Challenge**) to keep players in the flow channel as difficulty ramps.
+
+- [ ] **Personalization** — Let players choose:
+  - Language: English / 中文
+  - Hint intensity (low / medium / high)
+  - Cultural familiarity level
+  - Scenario emotional intensity (low / high)
+
+- [ ] **Prevent Novelty Decay** — Introduce varied NPCs, different relationship contexts, multiple endings per scenario, and regularly updated wisdom cards.
+
+- [ ] **Evidence of Learning Gains** — Add pre/post reflection prompts or short quizzes to demonstrate measurable improvement in cultural concept understanding and situational judgment.
+
 ## Tech Stack
 
 - **Framework:** Next.js 16 (App Router)
