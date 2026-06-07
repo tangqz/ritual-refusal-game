@@ -48,6 +48,9 @@ describe("fetchWithRetry", () => {
     const spy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(mockRes);
     const init: RequestInit = { method: "POST", body: "test" };
     await fetchWithRetry("https://api.example.com", init);
-    expect(spy).toHaveBeenCalledWith("https://api.example.com", init);
+    expect(spy).toHaveBeenCalledWith(
+      "https://api.example.com",
+      expect.objectContaining({ method: "POST", body: "test", signal: expect.any(AbortSignal) }),
+    );
   });
 });

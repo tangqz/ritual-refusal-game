@@ -41,7 +41,7 @@ function ScenarioCard({
     <button
       onClick={onClick}
       className="w-full text-left p-4 bg-white rounded-xl border border-stone-200
-        hover:border-stone-300 hover:shadow-sm transition-all"
+        hover:border-stone-300 hover:shadow-sm transition-all focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
     >
       <div className="flex items-start gap-4">
         <span className="text-3xl">{scenario.icon}</span>
@@ -194,7 +194,7 @@ export function JourneyMap({ lang }: JourneyMapProps) {
       <button
         onClick={() => router.push('/game/wisdom-book')}
         className="w-full p-4 bg-white rounded-xl border border-stone-200
-          hover:border-amber-300 hover:shadow-sm transition-all text-left"
+          hover:border-amber-300 hover:shadow-sm transition-all text-left focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
       >
         <div className="flex items-center gap-4">
           <span className="text-3xl">📖</span>

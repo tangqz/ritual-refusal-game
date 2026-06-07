@@ -10,9 +10,9 @@ export async function POST(request: NextRequest) {
   const requestId = rid();
   const startTime = Date.now();
 
-  // Rate limiting
-  const sessionId = request.headers.get('x-session-id') || request.headers.get('x-forwarded-for') || 'anonymous';
-  const { allowed, remaining } = checkRateLimit(`hint:${sessionId}`, RATE_LIMITS.hint);
+  // Rate limiting: by IP (x-session-id is client-controlled and easily spoofed)
+  const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'anonymous';
+  const { allowed, remaining } = checkRateLimit(`hint:${ip}`, RATE_LIMITS.hint);
   if (!allowed) {
     return new Response(JSON.stringify({ error: apiMsg('tooManyHintRequests', 'en') }), {
       status: 429,
@@ -104,7 +104,7 @@ Give ONE short, specific sentence (max 20 words). Be direct and practical — no
           temperature: 0.5,
           stream: false,
         }),
-        signal: AbortSignal.timeout(15000),
+        timeoutMs: 15000,
       },
     );
 

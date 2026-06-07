@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense, useMemo, useCallback} from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ChatBubble } from '@/components/ui/ChatBubble';
 import { ChoiceButton } from '@/components/ui/ChoiceButton';
@@ -182,17 +182,19 @@ function GameContent() {
   const isChallenge = stage === 'challenge';
 
   // Build FIM prompt context for practice mode
-  const getFimPrompt = (): string => {
+  // ⚡ Bolt Optimization: Memoize the prompt generation based on `messages` state
+  // to avoid recalculating string `.join()`s on every single token streamed during live text render.
+  const fimPrompt = useMemo((): string => {
     const scenarioTitle = lang === 'en' ? scenario?.titleEn : scenario?.titleZh;
     const scenarioSetting = lang === 'en' ? scenario?.settingEn : scenario?.settingZh;
     const npcRole = lang === 'en' ? scenario?.npcRoleEn : scenario?.npcRoleZh;
     // Last few messages as context
-    const recentMsgs = messagesRef.current.slice(-6).map(m => {
+    const recentMsgs = messages.slice(-6).map(m => {
       const role = m.role === 'assistant' ? npcRole : (m.role === 'user' ? 'You' : '');
       return role ? `${role}: ${m.content}` : '';
     }).filter(Boolean).join('\n');
     return `[Scene: ${scenarioSetting}]\n[Your role: A Chinese adoptee learning social norms]\n[NPC: ${npcRole}]\n\n${recentMsgs}\nYou:`;
-  };
+  }, [messages, lang, scenario]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, options, observeWaiting, liveNpc, livePlayer]);
 
@@ -323,6 +325,7 @@ function GameContent() {
         body: JSON.stringify({
           messages: msgsToSend, scenario: scenarioId, stage: currentStage,
           roundNumber: nextRound, lang,
+          retryHint: attempt > 0,
         }),
         signal: controller.signal,
       });
@@ -412,13 +415,17 @@ function GameContent() {
       // Detect tag-less LLM output: LLM forgot format, output raw text without <<TAG>> wrappers.
       // In guided mode this means no options → player gets stuck. Retry once.
       // Validate LLM output structure against stage requirements
-      const validation = parser.validateOutput(currentStage);
+      const validation = parser.validateOutput(currentStage, nextRound);
       if (!validation.valid) {
-        console.warn(`[streamFetch] LLM output validation issues for stage=${currentStage}:`, validation.issues);
+        console.warn(`[streamFetch] LLM output validation issues for stage=${currentStage} round=${nextRound}:`, validation.issues);
       }
 
-      // Retry once if no recognized tags (LLM produced raw text)
-      if (!result.hasAnyTag && attempt === 0 && result.npcText) {
+      // Retry once if no recognized tags (LLM produced raw text).
+      // In challenge and practice modes, raw text is common and the getResult()
+      // fallback handles it well — skip the retry to avoid unnecessary latency.
+      // In guided mode, tags are essential (OPTIONS, FEEDBACK) so retry.
+      const needsTagRetry = currentStage !== 'challenge' && currentStage !== 'practice';
+      if (!result.hasAnyTag && attempt === 0 && result.npcText && needsTagRetry) {
         console.warn('[streamFetch] LLM output has no tags (raw text). Retrying once...');
         await new Promise(r => setTimeout(r, 500));
         return streamFetch(history, currentStage, nextRound, 1);
@@ -625,12 +632,64 @@ function GameContent() {
     await streamFetch(messagesRef.current, stageRef.current!, round + 1);
   };
 
+  /** Detect if a player's free-text message likely represents goal achievement
+   *  (accepting the offer, conceding gracefully, etc.) based on the scenario's
+   *  interaction pattern and common acceptance language. */
+  const detectGoalAchievement = (text: string): boolean => {
+    const goal = getScenarioGoal(scenarioId);
+    const lower = text.toLowerCase();
+    const pattern = goal?.pattern || 'refuse_then_accept';
+
+    switch (pattern) {
+      case 'refuse_then_accept':
+        // Acceptance: thank, take, accept, gratitude + warmth
+        // First check for negation of "accept" to avoid false positives
+        // e.g. "can't accept", "won't accept", "don't accept", "not accept"
+        if (/\b(?:can'?t|cannot|won'?t|don'?t|not)\s+accept\b/i.test(lower)) {
+          return false;
+        }
+        return /(thank|thanks|take it|accept|收下|拿着|谢谢|xiè|xīnnián|新年|treasure|bless|wish you|happy new)/i.test(lower);
+      case 'deflect_and_connect':
+        // Deflection + reciprocal warmth achieved
+        return /(哪里|nǎlǐ|no.*no|you('re| are).*(kind|nice|beautiful|too)|过奖|夸张|太.*客气)/i.test(lower);
+      case 'compete_then_concede':
+        // Concession + reciprocation commitment
+        return /(next time|下次|i('ll| will).*(pay|treat|get)|my turn|请你|我来)/i.test(lower);
+      case 'refuse_indirectly':
+        // Indirect refusal achieved
+        return /(maybe|perhaps|下次|later|不一定|看情况|不太方便)/i.test(lower);
+      default:
+        return false;
+    }
+  };
+
   const handlePracticeSubmit = async (text: string) => {
     if (endingRef.current || isLoading || !text.trim()) return;
     const userMsg: Message = { id: genId(), role: 'user', content: text.trim() };
     const updatedMessages = [...messagesRef.current, userMsg];
     messagesRef.current = updatedMessages;
     setMessages(updatedMessages);
+
+    // Client-side goal detection: if the player's text looks like acceptance
+    // and the LLM tends to output raw text (no <<END>>), proactively show the
+    // end button and let the LLM generate a warm NPC closing in the background.
+    if (detectGoalAchievement(text.trim())) {
+      const goal = getScenarioGoal(scenarioId);
+      const ackFeedback = lang === 'en'
+        ? (goal?.acceptanceFeedbackEn || '🦉 You found the rhythm — graceful navigation of Chinese social culture.')
+        : (goal?.acceptanceFeedbackZh || '🦉 你找到了节奏——优雅地驾驭了中国社交文化。');
+      const withFeedback = [
+        ...updatedMessages,
+        { id: genId(), role: 'feedback' as const, content: ackFeedback },
+      ];
+      messagesRef.current = withFeedback;
+      setMessages(withFeedback);
+      setPracticeEndAvailable(true);
+      // Prevent duplicate feedback: LLM's <<FEEDBACK>> should not be shown
+      // when client-side acceptance feedback has already been displayed.
+      acceptanceFeedbackShownRef.current = true;
+    }
+
     const round = currentRoundRef.current;
     if (round >= SAFETY_MAX_ROUNDS) { setTimeout(() => endGame('max_rounds'), 1000); return; }
     await streamFetch(messagesRef.current, stageRef.current!, round + 1);
@@ -914,26 +973,26 @@ function GameContent() {
 
   // ─── UI helpers ────────────────────────────────────────────────────
 
-  const togglePsychology = (msgId: string) => {
+  const togglePsychology = useCallback((msgId: string) => {
     setExpandedNotes(prev => {
       const next = new Set(prev);
       if (next.has(msgId)) next.delete(msgId); else next.add(msgId);
       return next;
     });
-  };
+  }, []);
 
-  const toggleCultural = (msgId: string) => {
+  const toggleCultural = useCallback((msgId: string) => {
     setExpandedCultural(prev => {
       const next = new Set(prev);
       if (next.has(msgId)) next.delete(msgId); else next.add(msgId);
       return next;
     });
-  };
+  }, []);
 
   // Wisdom popup
-  const showWisdomPopup = (card: AuntieWisdom) => {
+  const showWisdomPopup = useCallback((card: AuntieWisdom) => {
     setPendingWisdom(card);
-  };
+  }, []);
 
   const handleCollectWisdom = () => {
     if (!pendingWisdom) return;
@@ -1060,7 +1119,7 @@ function GameContent() {
       <DebriefPanel
         scenarioId={scenarioId} stage={nextSt!} roundsPlayed={currentRound}
         insightsCollected={collectedInsights} earnedTitle={earnedTitle}
-        messages={messagesRef.current}
+        messages={messages}
         debriefTitle={debriefTitle}
         debriefSummary={debriefSummary}
         annotations={debriefAnnotations}
@@ -1259,7 +1318,7 @@ function GameContent() {
               placeholder={lang === 'en' ? 'Type your response...' : '输入你的回应...'}
               disabled={isLoading}
               onSubmit={handlePracticeSubmit}
-              fimPrompt={getFimPrompt()}
+              fimPrompt={fimPrompt}
               lang={lang}
             />
           </div>

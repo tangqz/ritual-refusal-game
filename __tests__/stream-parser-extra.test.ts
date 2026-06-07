@@ -71,7 +71,7 @@ describe("StreamParser extra", () => {
     parser.feed("Hello!");
     parser.feed("<</NPC>>");
     parser.getResult();
-    const v = parser.validateOutput("practice");
+    const v = parser.validateOutput("practice", 2); // round 2+ needs FEEDBACK
     expect(v.issues.some(function(i) { return i.includes("FEEDBACK"); })).toBe(true);
   });
 

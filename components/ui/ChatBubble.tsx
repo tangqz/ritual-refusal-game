@@ -1,4 +1,5 @@
 'use client';
+import React, { memo } from 'react';
 import clsx from 'clsx';
 import { MarkdownText } from './MarkdownText';
 
@@ -12,7 +13,14 @@ interface ChatBubbleProps {
   children?: React.ReactNode; // psychology note or other expandable content
 }
 
-export function ChatBubble({ content, isUser, avatar, isContext, wisdomIcon, onWisdomClick, children }: ChatBubbleProps) {
+/**
+ * ⚡ Bolt Optimization: Wrapped in React.memo to prevent unnecessary re-renders
+ *    during live LLM text streaming. Since the parent component continuously
+ *    updates state, memoizing ChatBubble prevents older messages from re-rendering
+ *    on every single streamed token.
+ *    Impact: Prevents O(N) re-renders of the entire message history per token.
+ */
+export const ChatBubble = memo(function ChatBubble({ content, isUser, avatar, isContext, wisdomIcon, onWisdomClick, children }: ChatBubbleProps) {
   // Context messages: centered, dimmed, italic
   if (isContext) {
     return (
@@ -41,6 +49,7 @@ export function ChatBubble({ content, isUser, avatar, isContext, wisdomIcon, onW
             onClick={onWisdomClick}
             className="absolute -right-2 -top-2 w-7 h-7 bg-amber-100 hover:bg-amber-200 rounded-full flex items-center justify-center text-sm shadow-sm transition-colors"
             title="Wisdom card"
+            aria-label="View wisdom card"
           >
             🦉
           </button>
@@ -54,4 +63,4 @@ export function ChatBubble({ content, isUser, avatar, isContext, wisdomIcon, onW
       {isUser && avatar && <div className="ml-2 text-xl flex-shrink-0 flex items-end">{avatar}</div>}
     </div>
   );
-}
+});

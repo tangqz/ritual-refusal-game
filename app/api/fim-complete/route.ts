@@ -8,9 +8,9 @@ export async function POST(request: NextRequest) {
   const requestId = rid();
   const startTime = Date.now();
 
-  // Rate limiting
-  const sessionId = request.headers.get('x-session-id') || request.headers.get('x-forwarded-for') || 'anonymous';
-  const { allowed, remaining } = checkRateLimit(`fim:${sessionId}`, RATE_LIMITS.fim);
+  // Rate limiting: by IP (x-session-id is client-controlled and easily spoofed)
+  const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'anonymous';
+  const { allowed, remaining } = checkRateLimit(`fim:${ip}`, RATE_LIMITS.fim);
   if (!allowed) {
     return new Response(JSON.stringify({ error: apiMsg('tooManyRequests', 'en') }), {
       status: 429,
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
       error: `FIM API ${dsResponse.status}`,
       status: dsResponse.status,
     });
-    return new Response(JSON.stringify({ error: `FIM API ${dsResponse.status}`, details: errText }), {
+    return new Response(JSON.stringify({ error: `FIM API ${dsResponse.status}` }), {
       status: dsResponse.status < 500 && dsResponse.status !== 429 ? dsResponse.status : 502,
       headers: { 'Content-Type': 'application/json' },
     });

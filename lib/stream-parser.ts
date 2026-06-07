@@ -51,6 +51,18 @@ const OPEN_TAGS: [SectionType, RegExp][] = [
   ['END', /^<<END>>$/],
 ];
 
+// Inline open tags: tag appears at start of line but has content after it.
+// e.g. "<<NPC>>(smiles) Hello!" → tag "NPC", remainder "(smiles) Hello!"
+const INLINE_OPEN_PATTERNS: [SectionType, RegExp][] = [
+  ['NPC', /^<<NPC>>\s*(.+)/],
+  ['PLAYER', /^<<PLAYER>>\s*(.+)/],
+  ['PSYCHOLOGY', /^<<PSYCHOLOGY>>\s*(.+)/],
+  ['FEEDBACK', /^<<FEEDBACK>>\s*(.+)/],
+  ['OPTIONS', /^<<OPTIONS>>\s*(.+)/],
+  ['WISDOM', /^<<WISDOM>>\s*(.+)/],
+  ['CONTEXT', /^<<CONTEXT>>\s*(.+)/],
+];
+
 // Close tags: accept both <</TAG>> (correct) and </TAG> (XML-style, common LLM mistake)
 const CLOSE_PATTERNS: Record<string, RegExp> = {
   NPC: /^(<<\/NPC>>|<\/NPC>)$/,
@@ -126,7 +138,7 @@ export class StreamParser {
       return empty;
     }
 
-    // Check for open tags
+    // Check for open tags (full-line)
     for (const [type, regex] of OPEN_TAGS) {
       if (regex.test(trimmed)) {
         this.flushSection();
@@ -138,6 +150,33 @@ export class StreamParser {
           this.parsed.isEnd = true;
         }
         return empty;
+      }
+    }
+
+    // Check for inline open tags: <<TAG>> followed by content on the same line
+    // e.g. "<<NPC>>(smiles warmly) Hello dear!" → open NPC, first line "(smiles warmly) Hello dear!"
+    for (const [type, regex] of INLINE_OPEN_PATTERNS) {
+      const match = trimmed.match(regex);
+      if (match && match[1]) {
+        this.flushSection();
+        this.currentSection = type;
+        this.buffer = [match[1]]; // the remainder after the tag
+        this.parsed.hasAnyTag = true;
+        // Update live text immediately for this section
+        const content = match[1];
+        switch (type) {
+          case 'NPC': this.parsed.npcText = content; break;
+          case 'PLAYER': this.parsed.playerText = content; break;
+          case 'CONTEXT': this.parsed.contextText = content; break;
+          case 'PSYCHOLOGY': this.parsed.psychologyText = content; break;
+          case 'FEEDBACK': this.parsed.feedbackText = content; break;
+        }
+        return {
+          liveNpcText: this.parsed.npcText,
+          livePlayerText: this.parsed.playerText,
+          livePsychologyText: this.parsed.psychologyText,
+          liveFeedbackText: this.parsed.feedbackText,
+        };
       }
     }
 
@@ -286,9 +325,13 @@ export class StreamParser {
             this.parsed.options = bulletLines.map(text => {
               let isAcceptance = false;
               let cleanText = text;
+              // Detect [ACCEPT] at start or end (LLM places it inconsistently)
               if (cleanText.startsWith('[ACCEPT]')) {
                 isAcceptance = true;
                 cleanText = cleanText.slice(8).trim();
+              } else if (cleanText.endsWith('[ACCEPT]')) {
+                isAcceptance = true;
+                cleanText = cleanText.slice(0, -8).trim();
               }
               return { text: cleanText, isAcceptance };
             });
@@ -331,10 +374,13 @@ export class StreamParser {
       if (!trimmed.startsWith('- ')) continue;
       let text = trimmed.slice(2).trim();
       let isAcceptance = false;
-      // Detect [ACCEPT] marker
+      // Detect [ACCEPT] marker — LLM may place it at start or end of option
       if (text.startsWith('[ACCEPT]')) {
         isAcceptance = true;
         text = text.slice(8).trim();
+      } else if (text.endsWith('[ACCEPT]')) {
+        isAcceptance = true;
+        text = text.slice(0, -8).trim();
       }
       if (text) {
         this.parsed.options.push({ text, isAcceptance });
@@ -355,10 +401,14 @@ export class StreamParser {
     if (firstLine) this.parsed.wisdom = { id: firstLine };
   }
 
-  /** Validate parsed output against expected structure for the given stage. */
-  validateOutput(stage: string): { valid: boolean; issues: string[] } {
+  /** Validate parsed output against expected structure for the given stage.
+   *  @param roundNumber — current conversation round (1-based). Used to skip
+   *  FEEDBACK checks when the stage prompt doesn't require FEEDBACK yet (e.g.
+   *  guided/practice round 1 where there's no player choice to reflect on). */
+  validateOutput(stage: string, roundNumber?: number): { valid: boolean; issues: string[] } {
     const issues: string[] = [];
     const r = this.parsed;
+    const round = roundNumber ?? 1;
 
     if (!r.hasAnyTag && stage !== 'challenge') {
       issues.push('No LLM output tags detected — raw text may not be parseable');
@@ -372,12 +422,18 @@ export class StreamParser {
     if (stage === 'guided') {
       if (!r.npcText) issues.push('Guided mode: missing <<NPC>> dialogue');
       if (r.options.length === 0 && !r.isEnd) issues.push('Guided mode: missing <<OPTIONS>> and no <<END>>');
-      if (!r.feedbackText && r.options.length > 0) issues.push('Guided mode: missing <<FEEDBACK>> after options');
+      // Round 1 in guided mode: prompt says "No <<FEEDBACK>> needed yet"
+      if (!r.feedbackText && r.options.length > 0 && round > 1) {
+        issues.push('Guided mode: missing <<FEEDBACK>> after options');
+      }
     }
 
     if (stage === 'practice') {
       if (!r.npcText) issues.push('Practice mode: missing <<NPC>> dialogue');
-      if (!r.feedbackText && !r.isEnd) issues.push('Practice mode: missing <<FEEDBACK>>');
+      // Round 1 in practice mode: no player message to give feedback on yet
+      if (!r.feedbackText && !r.isEnd && round > 1) {
+        issues.push('Practice mode: missing <<FEEDBACK>>');
+      }
     }
 
     // Wisdom reference check (all modes)

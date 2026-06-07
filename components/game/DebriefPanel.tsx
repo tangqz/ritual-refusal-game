@@ -51,22 +51,47 @@ function HighlightedText({ text, annotations, msgIndex, lang }: {
   const unmatched: AnnotationItem[] = [];
 
   for (const ann of msgAnnotations) {
+    let phrase = ann.phrase;
+    // Strip surrounding quotes that the LLM sometimes wraps around the phrase
+    phrase = phrase.replace(/^["'""'']+|["'""'']+$/g, '');
+
     // Try exact match first, then case-insensitive, then substring-contains
-    let idx = text.indexOf(ann.phrase);
+    let idx = text.indexOf(phrase);
     if (idx === -1) {
-      idx = text.toLowerCase().indexOf(ann.phrase.toLowerCase());
+      idx = text.toLowerCase().indexOf(phrase.toLowerCase());
+    }
+    // Try matching without trailing punctuation (LLM may include/exclude it)
+    if (idx === -1 && phrase.length > 3) {
+      const noPunct = phrase.replace(/[.!?,;:]+$/, '');
+      if (noPunct !== phrase) {
+        idx = text.indexOf(noPunct);
+        if (idx === -1) idx = text.toLowerCase().indexOf(noPunct.toLowerCase());
+      }
     }
     // Try matching just the first 3+ chars (LLM may slightly alter the phrase)
-    if (idx === -1 && ann.phrase.length >= 3) {
-      const shortPhrase = ann.phrase.slice(0, Math.max(3, Math.floor(ann.phrase.length * 0.7)));
+    if (idx === -1 && phrase.length >= 3) {
+      const shortPhrase = phrase.slice(0, Math.max(3, Math.floor(phrase.length * 0.7)));
       idx = text.indexOf(shortPhrase);
       if (idx === -1) idx = text.toLowerCase().indexOf(shortPhrase.toLowerCase());
+    }
+    // Last resort: check if the text contains the phrase as a substring (case-insensitive)
+    if (idx === -1) {
+      const lowerText = text.toLowerCase();
+      const lowerPhrase = phrase.toLowerCase();
+      const subIdx = lowerText.indexOf(lowerPhrase);
+      if (subIdx !== -1) {
+        // Map the case-insensitive index back to the original text
+        // Since the matched substring might differ in case, use the found position
+        idx = subIdx;
+        // Use the actual substring from the original text, not the annotation phrase
+        phrase = text.slice(subIdx, subIdx + phrase.length);
+      }
     }
     if (idx === -1) {
       unmatched.push(ann);
       continue;
     }
-    segments.push({ start: idx, end: idx + ann.phrase.length, type: ann.type, explanation: ann.explanation });
+    segments.push({ start: idx, end: idx + phrase.length, type: ann.type, explanation: ann.explanation });
   }
 
   // Sort and deduplicate overlaps
