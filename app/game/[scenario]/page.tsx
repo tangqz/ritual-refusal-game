@@ -1452,7 +1452,7 @@ function GameContent() {
             <p className="text-sm text-stone-500 mb-4">{lang === 'en' ? pendingWisdom.textEn : pendingWisdom.textZh}</p>
             <div className="flex gap-2">
               <button onClick={handleCollectWisdom} className="flex-1 py-3 bg-stone-800 text-white rounded-xl font-medium hover:bg-stone-700">{t('wisdom.collect', lang)}</button>
-              <button onClick={() => { setPendingWisdom(null); pendingWisdomRef.current = null; }} className="px-4 py-3 text-stone-400 hover:text-stone-600">✕</button>
+              <button onClick={() => { setPendingWisdom(null); pendingWisdomRef.current = null; }} className="px-4 py-3 text-stone-400 hover:text-stone-600 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none" aria-label={lang === 'en' ? 'Close' : '关闭'}>✕</button>
             </div>
           </div>
         </div>
