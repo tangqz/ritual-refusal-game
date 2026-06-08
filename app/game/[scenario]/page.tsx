@@ -1225,7 +1225,8 @@ function GameContent() {
                 <div className="mt-1">
                   <button
                     onClick={() => toggleCultural(m.id)}
-                    className={`text-xs flex items-center gap-1 transition-colors ${
+                    aria-expanded={expandedCultural.has(m.id)}
+                    className={`text-xs flex items-center gap-1 transition-colors focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none rounded-sm ${
                       expandedCultural.has(m.id)
                         ? 'text-amber-600 hover:text-amber-700'
                         : 'text-amber-500 hover:text-amber-600'
@@ -1452,7 +1453,7 @@ function GameContent() {
             <p className="text-sm text-stone-500 mb-4">{lang === 'en' ? pendingWisdom.textEn : pendingWisdom.textZh}</p>
             <div className="flex gap-2">
               <button onClick={handleCollectWisdom} className="flex-1 py-3 bg-stone-800 text-white rounded-xl font-medium hover:bg-stone-700">{t('wisdom.collect', lang)}</button>
-              <button onClick={() => { setPendingWisdom(null); pendingWisdomRef.current = null; }} className="px-4 py-3 text-stone-400 hover:text-stone-600">✕</button>
+              <button onClick={() => { setPendingWisdom(null); pendingWisdomRef.current = null; }} aria-label="Close" className="px-4 py-3 text-stone-400 hover:text-stone-600 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none rounded-xl">✕</button>
             </div>
           </div>
         </div>
