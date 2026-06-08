@@ -161,7 +161,7 @@ export function FillInInput({ placeholder, disabled, onSubmit, fimPrompt, fimSuf
             disabled={disabled}
             className="absolute bottom-2 right-2 w-9 h-9 flex items-center justify-center
               rounded-lg bg-amber-500 text-white hover:bg-amber-600 active:scale-95
-              disabled:opacity-30 transition-all shadow-sm"
+              disabled:opacity-30 transition-all shadow-sm focus-visible:ring-2 focus-visible:ring-stone-800 focus-visible:outline-none"
             aria-label={lang === 'en' ? 'Send' : '发送'}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
