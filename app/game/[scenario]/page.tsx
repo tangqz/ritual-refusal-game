@@ -1451,8 +1451,8 @@ function GameContent() {
             <h3 className="text-xl font-bold text-stone-900 mb-2">{lang === 'en' ? pendingWisdom.titleEn : pendingWisdom.titleZh}</h3>
             <p className="text-sm text-stone-500 mb-4">{lang === 'en' ? pendingWisdom.textEn : pendingWisdom.textZh}</p>
             <div className="flex gap-2">
-              <button onClick={handleCollectWisdom} className="flex-1 py-3 bg-stone-800 text-white rounded-xl font-medium hover:bg-stone-700">{t('wisdom.collect', lang)}</button>
-              <button onClick={() => { setPendingWisdom(null); pendingWisdomRef.current = null; }} className="px-4 py-3 text-stone-400 hover:text-stone-600">✕</button>
+              <button onClick={handleCollectWisdom} className="flex-1 py-3 bg-stone-800 text-white rounded-xl font-medium hover:bg-stone-700 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none">{t('wisdom.collect', lang)}</button>
+              <button onClick={() => { setPendingWisdom(null); pendingWisdomRef.current = null; }} aria-label={lang === 'en' ? 'Close' : '关闭'} className="px-4 py-3 text-stone-400 hover:text-stone-600 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none">✕</button>
             </div>
           </div>
         </div>

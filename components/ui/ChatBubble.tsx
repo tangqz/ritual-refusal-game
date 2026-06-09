@@ -47,7 +47,7 @@ export const ChatBubble = memo(function ChatBubble({ content, isUser, avatar, is
         {wisdomIcon && (
           <button
             onClick={onWisdomClick}
-            className="absolute -right-2 -top-2 w-7 h-7 bg-amber-100 hover:bg-amber-200 rounded-full flex items-center justify-center text-sm shadow-sm transition-colors"
+            className="absolute -right-2 -top-2 w-7 h-7 bg-amber-100 hover:bg-amber-200 rounded-full flex items-center justify-center text-sm shadow-sm transition-colors focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
             title="Wisdom card"
             aria-label="View wisdom card"
           >
