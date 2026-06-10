@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   // Rate limiting: by IP (x-session-id is client-controlled and easily spoofed)
-  const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'anonymous';
+  const ip = (request as any).ip || request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'anonymous';
   const { allowed, remaining } = checkRateLimit(`chat:${ip}`, RATE_LIMITS.chat);
   if (!allowed) {
     return new Response(JSON.stringify({ error: apiMsg('tooManyRequests', 'en') }), {
