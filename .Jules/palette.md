@@ -2,3 +2,4 @@
 ## 2026-05-30 - Added Keyboard Focus Ring Styles
 **Learning:** Several interactive button components across the application (like LanguageToggle, JourneyMap cards, ChoiceButton) were lacking explicit focus visible styles, making keyboard navigation difficult.
 **Action:** When adding new interactive elements like buttons, always include focus-visible utility classes (e.g. `focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none`) to ensure accessibility for keyboard users.
+## 2026-06-10 - Enhanced Keyboard Focus visibility\n**Learning:** The application strips default focus outlines for buttons, and many critical interaction buttons lacked custom focus-visible states, reducing keyboard accessibility.\n**Action:** Add `focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none` directly to Tailwind classes of new or unstyled buttons to ensure custom focus outlines are present.

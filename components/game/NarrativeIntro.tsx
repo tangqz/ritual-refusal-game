@@ -63,7 +63,7 @@ export function NarrativeIntro({ lang, onToggleLang }: NarrativeIntroProps) {
             <button
               onClick={() => setStep(step + 1)}
               className="px-8 py-3 bg-stone-800 text-white rounded-xl font-medium
-                hover:bg-stone-700 transition-colors"
+                hover:bg-stone-700 transition-colors focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
             >
               {lang === 'en' ? 'Next →' : '继续 →'}
             </button>
@@ -71,7 +71,7 @@ export function NarrativeIntro({ lang, onToggleLang }: NarrativeIntroProps) {
             <button
               onClick={() => { completeOnboarding(); router.push('/game'); }}
               className="px-8 py-3 bg-stone-800 text-white rounded-xl font-medium
-                hover:bg-stone-700 transition-colors shadow-sm"
+                hover:bg-stone-700 transition-colors shadow-sm focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
             >
               {t('home.startJourney', lang)}
             </button>
@@ -79,7 +79,7 @@ export function NarrativeIntro({ lang, onToggleLang }: NarrativeIntroProps) {
           {step > 0 && (
             <button
               onClick={() => { completeOnboarding(); router.push('/game'); }}
-              className="block w-full text-stone-400 hover:text-stone-600 text-sm transition-colors"
+              className="block w-full text-stone-400 hover:text-stone-600 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
             >
               {lang === 'en' ? 'Skip intro →' : '跳过介绍 →'}
             </button>
